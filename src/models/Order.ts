@@ -1,0 +1,95 @@
+import mongoose, { Schema, Document, Model, Types } from 'mongoose'
+
+export interface IOrderItem {
+  menuItemId: Types.ObjectId
+  name: string
+  price: number
+  quantity: number
+  specialInstructions?: string
+}
+
+export interface IOrder extends Document {
+  orderNumber: string
+  customerName: string
+  customerPhone: string
+  customerEmail: string
+  items: IOrderItem[]
+  subtotal: number
+  discountAmount: number
+  total: number
+  couponCode?: string
+  pickupOnly: boolean
+  status:
+    | 'pending_payment'
+    | 'pending'
+    | 'accepted'
+    | 'preparing'
+    | 'ready_for_pickup'
+    | 'completed'
+    | 'cancelled'
+  paymentIntentId?: string
+  paymentStatus?: 'unpaid' | 'paid' | 'failed'
+  createdAt: Date
+  updatedAt: Date
+}
+
+const OrderItemSchema = new Schema<IOrderItem>(
+  {
+    menuItemId: { type: Schema.Types.ObjectId, ref: 'MenuItem', required: true },
+    name: { type: String, required: true },
+    price: { type: Number, required: true },
+    quantity: { type: Number, required: true, min: 1 },
+    specialInstructions: { type: String },
+  },
+  { _id: false }
+)
+
+const OrderSchema = new Schema<IOrder>(
+  {
+    orderNumber: { type: String, required: true, unique: true, index: true },
+    customerName: { type: String, required: true, trim: true },
+    customerPhone: { type: String, required: true, trim: true },
+    customerEmail: {
+      type: String,
+      required: true,
+      lowercase: true,
+      trim: true,
+      index: true,
+    },
+    items: [OrderItemSchema],
+    subtotal: { type: Number, required: true },
+    discountAmount: { type: Number, default: 0 },
+    total: { type: Number, required: true },
+    couponCode: { type: String },
+    pickupOnly: { type: Boolean, default: true },
+    status: {
+      type: String,
+      enum: [
+        'pending_payment',
+        'pending',
+        'accepted',
+        'preparing',
+        'ready_for_pickup',
+        'completed',
+        'cancelled',
+      ],
+      default: 'pending_payment',
+      index: true,
+    },
+    paymentIntentId: { type: String, index: true },
+    paymentStatus: {
+      type: String,
+      enum: ['unpaid', 'paid', 'failed'],
+      default: 'unpaid',
+    },
+  },
+  { timestamps: true }
+)
+
+OrderSchema.index({ createdAt: -1 })
+OrderSchema.index({ status: 1, createdAt: -1 })
+
+const Order: Model<IOrder> =
+  mongoose.models.Order || mongoose.model<IOrder>('Order', OrderSchema)
+
+export default Order

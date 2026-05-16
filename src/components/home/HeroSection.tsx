@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { MapPin, Clock, ShoppingBag, ChevronDown } from 'lucide-react'
+import { MapPin, Clock, ShoppingBag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export default function HeroSection() {
@@ -73,10 +73,7 @@ export default function HeroSection() {
         </div>
       </div>
 
-      {/* Scroll indicator */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/40 animate-bounce">
-        <ChevronDown className="w-6 h-6" />
-      </div>
+
     </section>
   )
 }

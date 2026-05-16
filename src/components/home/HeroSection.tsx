@@ -16,7 +16,7 @@ export default function HeroSection() {
       />
 
       {/* Content */}
-      <div className="relative z-10 text-center px-4 sm:px-6 max-w-4xl mx-auto pt-20">
+      <div className="relative z-10 text-center px-4 sm:px-6 max-w-4xl mx-auto pt-20 pb-16">
         {/* Pickup badge */}
         <div className="inline-flex items-center gap-2 bg-orange/20 border border-orange/40 text-orange rounded-full px-4 py-1.5 text-sm font-medium mb-6 animate-fade-in">
           <ShoppingBag className="w-4 h-4" />

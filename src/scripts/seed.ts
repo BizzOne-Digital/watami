@@ -41,17 +41,16 @@ function slugify(text: string): string {
 }
 
 const CATEGORIES = [
-  { name: 'Sushi Bento U', description: 'Sushi bento sets', sortOrder: 1 },
-  { name: 'Rice', description: 'Rice bowls and donburi', sortOrder: 2 },
-  { name: 'Ramen noodle soup', description: 'Japanese ramen noodle soups', sortOrder: 3 },
-  { name: 'Udon noodle soup', description: 'Japanese udon noodle soups', sortOrder: 4 },
-  { name: 'Bento', description: 'Bento box meals', sortOrder: 5 },
-  { name: 'Entrée', description: 'Starters and sides', sortOrder: 6 },
-  { name: 'Platter', description: 'Sushi platters for sharing', sortOrder: 7 },
-  { name: 'Hand Roll U', description: 'Hand rolls', sortOrder: 8 },
-  { name: 'Sushi Box U', description: 'Sushi boxes', sortOrder: 9 },
-  { name: 'Drinks U', description: 'Beverages', sortOrder: 10 },
-  { name: 'Sauce', description: 'Sauces and condiments', sortOrder: 11 },
+  { name: 'Rice', description: 'Rice bowls and donburi', sortOrder: 1 },
+  { name: 'Ramen noodle soup', description: 'Japanese ramen noodle soups', sortOrder: 2 },
+  { name: 'Udon noodle soup', description: 'Japanese udon noodle soups', sortOrder: 3 },
+  { name: 'Bento', description: 'Bento box meals', sortOrder: 4 },
+  { name: 'Entrée', description: 'Starters and sides', sortOrder: 5 },
+  { name: 'Platter', description: 'Sushi platters for sharing', sortOrder: 6 },
+  { name: 'Hand Roll U', description: 'Hand rolls', sortOrder: 7 },
+  { name: 'Sushi Box U', description: 'Sushi boxes', sortOrder: 8 },
+  { name: 'Drinks U', description: 'Beverages', sortOrder: 9 },
+  { name: 'Sauce', description: 'Sauces and condiments', sortOrder: 10 },
 ]
 
 type MenuItemSeed = { name: string; price: number; description: string; tags?: string[] }

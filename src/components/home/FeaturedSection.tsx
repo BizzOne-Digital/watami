@@ -45,7 +45,7 @@ export default function FeaturedSection({ items, onItemClick }: FeaturedSectionP
                 {item.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={item.imageUrl}
+                    src={encodeURI(item.imageUrl)}
                     alt={item.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />

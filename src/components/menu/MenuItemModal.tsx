@@ -58,7 +58,7 @@ export default function MenuItemModal({ item, hasPromo, onClose }: MenuItemModal
           {item.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={item.imageUrl}
+              src={encodeURI(item.imageUrl)}
               alt={item.name}
               className="w-full h-full object-cover opacity-90"
             />

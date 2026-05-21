@@ -31,7 +31,7 @@ export default function MenuCard({ item, hasPromo, onClick }: MenuCardProps) {
         {item.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={item.imageUrl}
+            src={encodeURI(item.imageUrl)}
             alt={item.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />

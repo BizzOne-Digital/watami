@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Search, Loader2, Star, Eye, EyeOff, ImagePlus, X } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Loader2, Star, Eye, EyeOff, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,8 +42,6 @@ export default function AdminMenuItemsPage() {
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchCategories = useCallback(async () => {
     const res = await fetch('/api/admin/categories')
@@ -92,36 +90,18 @@ export default function AdminMenuItemsPage() {
       popularOverride: item.popularOverride,
       sortOrder: item.sortOrder,
     })
-    setImagePreview(item.imageUrl ? encodeURI(item.imageUrl) : null)
+    setImagePreview(item.imageUrl || null)
     setDialogOpen(true)
   }
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImagePreview(URL.createObjectURL(file))
-    setUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch('/api/admin/upload', { method: 'POST', body: fd })
-      const data = await res.json()
-      if (!res.ok) { toast.error(data.error ?? 'Upload failed'); return }
-      setForm(prev => ({ ...prev, imageUrl: data.imageUrl }))
-      setImagePreview(encodeURI(data.imageUrl))
-      toast.success('Image uploaded')
-    } catch {
-      toast.error('Upload failed')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
+  const handleUrlChange = (url: string) => {
+    setForm(prev => ({ ...prev, imageUrl: url }))
+    setImagePreview(url.trim() || null)
   }
 
   const handleRemoveImage = () => {
     setForm(prev => ({ ...prev, imageUrl: '' }))
     setImagePreview(null)
-    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleSave = async () => {
@@ -300,59 +280,39 @@ export default function AdminMenuItemsPage() {
 
           <div className="space-y-4 py-2 max-h-[75vh] overflow-y-auto pr-1">
 
-            {/* ── Image Upload ── */}
+            {/* ── Image URL ── */}
             <div>
-              <Label>Image</Label>
-              <div className="mt-1">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/jpeg,image/jpg,image/png,image/webp"
-                  onChange={handleImageChange}
-                  className="hidden"
+              <Label>Image URL</Label>
+              <div className="flex gap-2 mt-1">
+                <Input
+                  placeholder="https://... or /menu-images/filename.png"
+                  value={form.imageUrl}
+                  onChange={(e) => handleUrlChange(e.target.value)}
+                  className="text-sm"
                 />
-                {imagePreview ? (
-                  <div className="relative w-full h-44 rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                    {uploading && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <Loader2 className="w-7 h-7 text-white animate-spin" />
-                      </div>
-                    )}
-                    {!uploading && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleRemoveImage}
-                          className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-600 text-white rounded-full transition-colors"
-                          title="Remove image"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs font-medium rounded-lg transition-colors"
-                        >
-                          <ImagePlus className="w-3.5 h-3.5" /> Change
-                        </button>
-                      </>
-                    )}
-                  </div>
-                ) : (
+                {form.imageUrl && (
                   <button
                     type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="w-full h-36 border-2 border-dashed border-gray-300 hover:border-burgundy rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-burgundy transition-colors disabled:opacity-50 cursor-pointer"
+                    onClick={handleRemoveImage}
+                    className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors flex-shrink-0"
+                    title="Clear image"
                   >
-                    <ImagePlus className="w-8 h-8" />
-                    <span className="text-sm font-medium">Click to upload image</span>
-                    <span className="text-xs text-gray-400">JPEG, PNG, WebP · max 5MB</span>
+                    <X className="w-4 h-4" />
                   </button>
                 )}
               </div>
+              {/* Live preview */}
+              {imagePreview && (
+                <div className="mt-2 w-full h-40 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                    onError={() => setImagePreview(null)}
+                  />
+                </div>
+              )}
             </div>
 
             {/* ── Name ── */}
@@ -438,7 +398,7 @@ export default function AdminMenuItemsPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || uploading} className="bg-burgundy hover:bg-burgundy-dark text-white">
+            <Button onClick={handleSave} disabled={saving} className="bg-burgundy hover:bg-burgundy-dark text-white">
               {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {editingId ? 'Update' : 'Create'}
             </Button>

@@ -7,6 +7,7 @@ interface MenuItem {
   name: string
   description?: string
   price: number
+  imageUrl?: string
   tags: string[]
   isAvailable: boolean
   isPopular: boolean
@@ -37,13 +38,29 @@ export default function FeaturedSection({ items, onItemClick }: FeaturedSectionP
             <div
               key={item._id}
               onClick={() => onItemClick(item)}
-              className="group cursor-pointer bg-cream rounded-xl p-4 hover:shadow-md transition-all duration-200 hover:-translate-y-1 border border-cream-dark hover:border-burgundy/30"
+              className="group cursor-pointer bg-cream rounded-xl overflow-hidden hover:shadow-md transition-all duration-200 hover:-translate-y-1 border border-cream-dark hover:border-burgundy/30"
             >
-              <div className="text-3xl mb-2 text-center group-hover:scale-110 transition-transform">🍱</div>
-              <h3 className="font-semibold text-charcoal text-xs leading-tight line-clamp-2 group-hover:text-burgundy transition-colors text-center">
-                {item.name}
-              </h3>
-              <p className="text-burgundy font-bold text-sm mt-1 text-center">{formatCurrency(item.price)}</p>
+              {/* Image */}
+              <div className="relative h-28 bg-gradient-to-br from-cream-dark to-cream overflow-hidden">
+                {item.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <span className="text-3xl group-hover:scale-110 transition-transform">🍱</span>
+                  </div>
+                )}
+              </div>
+              <div className="p-3">
+                <h3 className="font-semibold text-charcoal text-xs leading-tight line-clamp-2 group-hover:text-burgundy transition-colors">
+                  {item.name}
+                </h3>
+                <p className="text-burgundy font-bold text-sm mt-1">{formatCurrency(item.price)}</p>
+              </div>
             </div>
           ))}
         </div>

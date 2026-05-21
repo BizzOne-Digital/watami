@@ -14,6 +14,7 @@ interface MenuItemModalProps {
     name: string
     description?: string
     price: number
+    imageUrl?: string
     tags: string[]
     isAvailable: boolean
     isPopular: boolean
@@ -53,15 +54,30 @@ export default function MenuItemModal({ item, hasPromo, onClose }: MenuItemModal
         {/* Hidden title for accessibility */}
         <DialogTitle className="sr-only">{item.name}</DialogTitle>
         {/* Header image area */}
-        <div className="relative h-48 bg-gradient-to-br from-burgundy to-charcoal flex items-center justify-center">
-          <div className="text-center text-white px-6">
-            <div className="text-5xl mb-2">🍱</div>
-            {item.categoryName && (
-              <p className="text-white/60 text-xs uppercase tracking-wider">{item.categoryName}</p>
-            )}
-          </div>
+        <div className="relative h-48 bg-gradient-to-br from-burgundy to-charcoal flex items-center justify-center overflow-hidden">
+          {item.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              className="w-full h-full object-cover opacity-90"
+            />
+          ) : (
+            <div className="text-center text-white px-6">
+              <div className="text-5xl mb-2">🍱</div>
+            </div>
+          )}
+          {/* Dark overlay for text readability when image present */}
+          {item.imageUrl && (
+            <div className="absolute inset-0 bg-black/30" />
+          )}
+          {item.categoryName && (
+            <div className="absolute bottom-3 left-4 z-10">
+              <p className="text-white/80 text-xs uppercase tracking-wider">{item.categoryName}</p>
+            </div>
+          )}
           {/* Badges overlay */}
-          <div className="absolute top-3 left-3 flex flex-wrap gap-1">
+          <div className="absolute top-3 left-3 flex flex-wrap gap-1 z-10">
             {!item.isAvailable && <Badge variant="unavailable">Unavailable</Badge>}
             {item.isPopular && <Badge variant="popular">⭐ Popular</Badge>}
             {hasPromo && <Badge variant="promo">🏷 Promo</Badge>}

@@ -17,6 +17,7 @@ interface MenuItem {
   description?: string
   price: number
   categoryId: string
+  imageUrl?: string
   tags: string[]
   isAvailable: boolean
   isPopular: boolean

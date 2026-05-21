@@ -9,6 +9,7 @@ interface MenuCardProps {
     name: string
     description?: string
     price: number
+    imageUrl?: string
     tags: string[]
     isAvailable: boolean
     isPopular: boolean
@@ -25,10 +26,22 @@ export default function MenuCard({ item, hasPromo, onClick }: MenuCardProps) {
         !item.isAvailable ? 'opacity-60' : ''
       }`}
     >
-      {/* Image placeholder */}
-      <div className="relative h-36 bg-gradient-to-br from-cream-dark to-cream flex items-center justify-center overflow-hidden">
-        <span className="text-4xl group-hover:scale-110 transition-transform duration-200">🍱</span>
-        {/* Badges */}
+      {/* Image */}
+      <div className="relative h-36 bg-gradient-to-br from-cream-dark to-cream overflow-hidden">
+        {item.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.imageUrl}
+            alt={item.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-4xl group-hover:scale-110 transition-transform duration-200">🍱</span>
+          </div>
+        )}
+
+        {/* Badges — top left */}
         <div className="absolute top-2 left-2 flex flex-wrap gap-1">
           {item.isPopular && (
             <Badge variant="popular" className="text-xs py-0">⭐ Popular</Badge>
@@ -40,7 +53,8 @@ export default function MenuCard({ item, hasPromo, onClick }: MenuCardProps) {
             <Badge variant="unavailable" className="text-xs py-0">Unavailable</Badge>
           )}
         </div>
-        {/* Tag badges */}
+
+        {/* Tag badges — top right */}
         <div className="absolute top-2 right-2 flex flex-col gap-1">
           {item.tags.includes('vegetarian') && (
             <Badge variant="vegetarian" className="text-xs py-0">V</Badge>

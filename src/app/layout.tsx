@@ -7,6 +7,7 @@ import { SessionProvider } from 'next-auth/react'
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXTAUTH_URL ?? 'http://localhost:3000'),
   title: 'Watami Japanese Food | Pickup Orders',
   description: 'Order fresh sushi, bento, ramen, and more for pickup at Watami Japanese Food, Hawthorn VIC.',
   keywords: 'Japanese food, sushi, bento, ramen, udon, Hawthorn, Melbourne, pickup',

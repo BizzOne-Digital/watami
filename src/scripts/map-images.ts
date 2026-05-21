@@ -32,7 +32,7 @@ function normalise(str: string): string {
 
 async function run() {
   // 1. Read image filenames
-  const imageDir = path.resolve(process.cwd(), 'public', 'menu images')
+  const imageDir = path.resolve(process.cwd(), 'public', 'menu-images')
   const imageFiles = fs.readdirSync(imageDir).filter(f =>
     /\.(png|jpg|jpeg|webp)$/i.test(f)
   )
@@ -43,7 +43,7 @@ async function run() {
     imageMap.set(normalise(file), file)
   }
 
-  console.log(`Found ${imageFiles.length} images in public/menu images/`)
+  console.log(`Found ${imageFiles.length} images in public/menu-images/`)
 
   // 2. Connect and fetch all menu items
   await mongoose.connect(MONGODB_URI)
@@ -60,8 +60,8 @@ async function run() {
     const imageFile = imageMap.get(normName)
 
     if (imageFile) {
-      // URL-encode the space in the folder name for web use
-      const imageUrl = `/menu%20images/${encodeURIComponent(imageFile)}`
+      // Clean URL — no encoding needed, Next.js handles spaces in local paths
+      const imageUrl = `/menu-images/${imageFile}`
       await MenuItem.updateOne(
         { _id: item._id },
         { $set: { imageUrl } }
@@ -78,7 +78,7 @@ async function run() {
         }
       }
       if (found) {
-        const imageUrl = `/menu%20images/${encodeURIComponent(found)}`
+        const imageUrl = `/menu-images/${found}`
         await MenuItem.updateOne(
           { _id: item._id },
           { $set: { imageUrl } }

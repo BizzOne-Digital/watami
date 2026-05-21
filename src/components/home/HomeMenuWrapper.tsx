@@ -8,6 +8,7 @@ interface MenuItem {
   name: string
   description?: string
   price: number
+  imageUrl?: string
   tags: string[]
   isAvailable: boolean
   isPopular: boolean

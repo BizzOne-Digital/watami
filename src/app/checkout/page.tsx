@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { ShoppingBag, Tag, X, Loader2, MapPin } from 'lucide-react'
+import { ShoppingBag, Tag, X, Loader2, MapPin, Heart } from 'lucide-react'
 import Header from '@/components/layout/Header'
 import Footer from '@/components/layout/Footer'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,9 @@ const checkoutSchema = z.object({
 
 type CheckoutForm = z.infer<typeof checkoutSchema>
 
+const TIP_OPTIONS = [0, 10, 15, 20]
+const DEFAULT_TIP = 15
+
 export default function CheckoutPage() {
   const router = useRouter()
   const { items, getSubtotal, getTotal, discountAmount, couponCode, setCoupon, clearCoupon } =
@@ -29,6 +32,13 @@ export default function CheckoutPage() {
   const [couponInput, setCouponInput] = useState('')
   const [couponLoading, setCouponLoading] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [tipPercentage, setTipPercentage] = useState(DEFAULT_TIP)
+
+  // Derived tip values
+  const subtotal = getSubtotal()
+  const afterDiscount = Math.max(0, subtotal - discountAmount)
+  const tipAmount = Math.round(afterDiscount * (tipPercentage / 100) * 100) / 100
+  const grandTotal = Math.round((afterDiscount + tipAmount) * 100) / 100
 
   const {
     register,
@@ -77,6 +87,7 @@ export default function CheckoutPage() {
             specialInstructions: item.specialInstructions,
           })),
           couponCode: couponCode || undefined,
+          tipPercentage,
         }),
       })
 
@@ -230,6 +241,36 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
+                {/* Tip selector */}
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-cream-dark">
+                  <h2 className="text-lg font-bold text-charcoal mb-1 flex items-center gap-2">
+                    <Heart className="w-5 h-5 text-burgundy" />
+                    Add a Tip
+                  </h2>
+                  <p className="text-gray-500 text-sm mb-4">Show your appreciation for our team</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {TIP_OPTIONS.map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() => setTipPercentage(pct)}
+                        className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                          tipPercentage === pct
+                            ? 'border-burgundy bg-burgundy text-white shadow-sm'
+                            : 'border-gray-200 bg-white text-charcoal hover:border-burgundy/50'
+                        }`}
+                      >
+                        {pct === 0 ? 'No tip' : `${pct}%`}
+                      </button>
+                    ))}
+                  </div>
+                  {tipPercentage > 0 && (
+                    <p className="text-sm text-gray-500 mt-3 text-center">
+                      {formatCurrency(tipAmount)} tip added · thank you! 🙏
+                    </p>
+                  )}
+                </div>
+
                 {/* Pay button */}
                 <Button
                   type="submit"
@@ -242,7 +283,7 @@ export default function CheckoutPage() {
                       Redirecting to payment...
                     </>
                   ) : (
-                    `Pay ${formatCurrency(getTotal())} — Secure Checkout`
+                    `Pay ${formatCurrency(grandTotal)} — Secure Checkout`
                   )}
                 </Button>
               </div>
@@ -275,9 +316,15 @@ export default function CheckoutPage() {
                         <span>-{formatCurrency(discountAmount)}</span>
                       </div>
                     )}
+                    {tipAmount > 0 && (
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>Tip ({tipPercentage}%)</span>
+                        <span>+{formatCurrency(tipAmount)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-bold text-charcoal text-base pt-1 border-t border-cream-dark">
                       <span>Total</span>
-                      <span className="text-burgundy">{formatCurrency(getTotal())}</span>
+                      <span className="text-burgundy">{formatCurrency(grandTotal)}</span>
                     </div>
                   </div>
                 </div>

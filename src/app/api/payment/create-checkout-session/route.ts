@@ -20,6 +20,7 @@ const schema = z.object({
   customerEmail: z.string().email(),
   items: z.array(orderItemSchema).min(1),
   couponCode: z.string().optional(),
+  tipPercentage: z.number().min(0).max(100).default(0),
 })
 
 export async function POST(req: NextRequest) {
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const { customerName, customerPhone, customerEmail, items, couponCode } = parsed.data
+    const { customerName, customerPhone, customerEmail, items, couponCode, tipPercentage } = parsed.data
 
     await connectDB()
 
@@ -62,7 +63,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const total = Math.max(0, subtotal - discountAmount)
+    // Calculate tip on subtotal after discount
+    const afterDiscount = Math.max(0, subtotal - discountAmount)
+    const tipAmount = Math.round(afterDiscount * (tipPercentage / 100) * 100) / 100
+    const total = Math.round((afterDiscount + tipAmount) * 100) / 100
     const orderNumber = generateOrderNumber()
 
     // Build the origin for redirect URLs
@@ -91,6 +95,20 @@ export async function POST(req: NextRequest) {
             name: `Discount (${couponCode?.toUpperCase() ?? 'coupon'})`,
           },
           unit_amount: -Math.round(discountAmount * 100),
+        },
+        quantity: 1,
+      })
+    }
+
+    // Add tip as a line item if applicable
+    if (tipAmount > 0) {
+      stripeLineItems.push({
+        price_data: {
+          currency: 'aud',
+          product_data: {
+            name: `Tip (${tipPercentage}%)`,
+          },
+          unit_amount: Math.round(tipAmount * 100),
         },
         quantity: 1,
       })
@@ -136,7 +154,9 @@ export async function POST(req: NextRequest) {
       })),
       subtotal: Math.round(subtotal * 100) / 100,
       discountAmount,
-      total: Math.round(total * 100) / 100,
+      tipPercentage,
+      tipAmount,
+      total,
       couponCode: couponCode?.toUpperCase(),
       pickupOnly: true,
       status: 'pending_payment',

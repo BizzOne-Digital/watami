@@ -16,6 +16,8 @@ export interface IOrder extends Document {
   items: IOrderItem[]
   subtotal: number
   discountAmount: number
+  tipPercentage: number
+  tipAmount: number
   total: number
   couponCode?: string
   pickupOnly: boolean
@@ -59,6 +61,8 @@ const OrderSchema = new Schema<IOrder>(
     items: [OrderItemSchema],
     subtotal: { type: Number, required: true },
     discountAmount: { type: Number, default: 0 },
+    tipPercentage: { type: Number, default: 0 },
+    tipAmount: { type: Number, default: 0 },
     total: { type: Number, required: true },
     couponCode: { type: String },
     pickupOnly: { type: Boolean, default: true },

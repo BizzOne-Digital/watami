@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-import { Plus, Pencil, Trash2, Search, Loader2, Star, Eye, EyeOff } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, Loader2, Star, Eye, EyeOff, ImagePlus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,12 +13,14 @@ interface Category { _id: string; name: string }
 interface MenuItem {
   _id: string; name: string; price: number; description?: string
   categoryId: string | { _id: string; name: string }
+  imageUrl?: string
   tags: string[]; isAvailable: boolean; isPopular: boolean
   popularOverride: string; orderCount: number; sortOrder: number
 }
 
 const emptyForm = {
   name: '', description: '', price: 0, categoryId: '',
+  imageUrl: '',
   tags: [] as string[], isAvailable: true, isPopular: false,
   popularOverride: 'auto', sortOrder: 0,
 }
@@ -39,6 +41,9 @@ export default function AdminMenuItemsPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchCategories = useCallback(async () => {
     const res = await fetch('/api/admin/categories')
@@ -69,6 +74,7 @@ export default function AdminMenuItemsPage() {
   const openCreate = () => {
     setEditingId(null)
     setForm({ ...emptyForm, categoryId: catFilter !== 'all' ? catFilter : '' })
+    setImagePreview(null)
     setDialogOpen(true)
   }
 
@@ -79,13 +85,43 @@ export default function AdminMenuItemsPage() {
       description: item.description ?? '',
       price: item.price,
       categoryId: typeof item.categoryId === 'object' ? item.categoryId._id : item.categoryId,
+      imageUrl: item.imageUrl ?? '',
       tags: item.tags,
       isAvailable: item.isAvailable,
       isPopular: item.isPopular,
       popularOverride: item.popularOverride,
       sortOrder: item.sortOrder,
     })
+    setImagePreview(item.imageUrl ? encodeURI(item.imageUrl) : null)
     setDialogOpen(true)
+  }
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImagePreview(URL.createObjectURL(file))
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error ?? 'Upload failed'); return }
+      setForm(prev => ({ ...prev, imageUrl: data.imageUrl }))
+      setImagePreview(encodeURI(data.imageUrl))
+      toast.success('Image uploaded')
+    } catch {
+      toast.error('Upload failed')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleRemoveImage = () => {
+    setForm(prev => ({ ...prev, imageUrl: '' }))
+    setImagePreview(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const handleSave = async () => {
@@ -196,14 +232,26 @@ export default function AdminMenuItemsPage() {
                 {filteredItems.map((item) => (
                   <tr key={item._id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-charcoal">{item.name}</span>
-                        {item.isPopular && <Star className="w-3.5 h-3.5 text-orange fill-orange" />}
-                      </div>
-                      <div className="flex gap-1 mt-0.5">
-                        {item.tags.map(t => (
-                          <span key={t} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{t}</span>
-                        ))}
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 flex-shrink-0 border border-gray-200">
+                          {item.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={encodeURI(item.imageUrl)} alt={item.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-lg">🍱</div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-charcoal">{item.name}</span>
+                            {item.isPopular && <Star className="w-3.5 h-3.5 text-orange fill-orange" />}
+                          </div>
+                          <div className="flex gap-1 mt-0.5">
+                            {item.tags.map(t => (
+                              <span key={t} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{t}</span>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{getCategoryName(item.categoryId)}</td>
@@ -246,16 +294,85 @@ export default function AdminMenuItemsPage() {
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>{editingId ? 'Edit Item' : 'New Menu Item'}</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto pr-1">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Item' : 'New Menu Item'}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 max-h-[75vh] overflow-y-auto pr-1">
+
+            {/* ── Image Upload ── */}
+            <div>
+              <Label>Image</Label>
+              <div className="mt-1">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png,image/webp"
+                  onChange={handleImageChange}
+                  className="hidden"
+                />
+                {imagePreview ? (
+                  <div className="relative w-full h-44 rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    {uploading && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <Loader2 className="w-7 h-7 text-white animate-spin" />
+                      </div>
+                    )}
+                    {!uploading && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleRemoveImage}
+                          className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-red-600 text-white rounded-full transition-colors"
+                          title="Remove image"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white text-xs font-medium rounded-lg transition-colors"
+                        >
+                          <ImagePlus className="w-3.5 h-3.5" /> Change
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="w-full h-36 border-2 border-dashed border-gray-300 hover:border-burgundy rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-burgundy transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <ImagePlus className="w-8 h-8" />
+                    <span className="text-sm font-medium">Click to upload image</span>
+                    <span className="text-xs text-gray-400">JPEG, PNG, WebP · max 5MB</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ── Name ── */}
             <div>
               <Label>Name *</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1" />
             </div>
+
+            {/* ── Description ── */}
             <div>
               <Label>Description</Label>
-              <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="w-full mt-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-burgundy resize-none" />
+              <textarea
+                value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                rows={2}
+                className="w-full mt-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-burgundy resize-none"
+              />
             </div>
+
+            {/* ── Price + Sort ── */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Price (AUD) *</Label>
@@ -266,6 +383,8 @@ export default function AdminMenuItemsPage() {
                 <Input type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: parseInt(e.target.value) || 0 })} className="mt-1" />
               </div>
             </div>
+
+            {/* ── Category ── */}
             <div>
               <Label>Category *</Label>
               <Select value={form.categoryId} onValueChange={(v) => setForm({ ...form, categoryId: v })}>
@@ -275,6 +394,8 @@ export default function AdminMenuItemsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            {/* ── Tags ── */}
             <div>
               <Label>Tags</Label>
               <div className="flex gap-3 mt-1">
@@ -291,6 +412,8 @@ export default function AdminMenuItemsPage() {
                 ))}
               </div>
             </div>
+
+            {/* ── Popular Override ── */}
             <div>
               <Label>Popular Override</Label>
               <Select value={form.popularOverride} onValueChange={(v) => setForm({ ...form, popularOverride: v })}>
@@ -302,16 +425,20 @@ export default function AdminMenuItemsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-4">
+
+            {/* ── Available ── */}
+            <div>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={form.isAvailable} onChange={(e) => setForm({ ...form, isAvailable: e.target.checked })} className="rounded" />
                 Available
               </label>
             </div>
+
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-burgundy hover:bg-burgundy-dark text-white">
+            <Button onClick={handleSave} disabled={saving || uploading} className="bg-burgundy hover:bg-burgundy-dark text-white">
               {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               {editingId ? 'Update' : 'Create'}
             </Button>

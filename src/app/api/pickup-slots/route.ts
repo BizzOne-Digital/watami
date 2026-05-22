@@ -14,9 +14,19 @@ export async function GET(req: NextRequest) {
   try {
     await connectDB()
 
-    const settings = await RestaurantSettings.findOne().lean()
+    let settings = await RestaurantSettings.findOne().lean()
+
+    // Auto-create defaults if none exist (first deploy)
     if (!settings) {
-      return NextResponse.json({ error: 'Restaurant settings not configured' }, { status: 500 })
+      const created = await RestaurantSettings.create({
+        weeklyPickupHours: [0, 1, 2, 3, 4, 5, 6].map((day) => ({
+          dayOfWeek: day,
+          isOpen: true,
+          openTime: '11:00',
+          closeTime: '21:00',
+        })),
+      })
+      settings = created.toObject()
     }
 
     const { searchParams } = new URL(req.url)

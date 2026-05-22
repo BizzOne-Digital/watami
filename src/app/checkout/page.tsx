@@ -96,8 +96,20 @@ export default function CheckoutPage() {
     fetch('/api/pickup-slots')
       .then(r => r.json())
       .then(data => {
+        // If API returned an error object, use fallback defaults
+        if (data.error) {
+          setPickupSettings({
+            pickupEnabled: true,
+            asapPickupEnabled: true,
+            scheduledPickupEnabled: true,
+            defaultPreparationMinutes: 25,
+            availableDates: [],
+            asapEstimate: null,
+            timezone: 'Australia/Melbourne',
+          })
+          return
+        }
         setPickupSettings(data)
-        // Default to asap if enabled, else scheduled
         if (!data.asapPickupEnabled && data.scheduledPickupEnabled) {
           setPickupType('scheduled')
         }
@@ -105,7 +117,18 @@ export default function CheckoutPage() {
           setSelectedDate(data.availableDates[0])
         }
       })
-      .catch(() => toast.error('Failed to load pickup options'))
+      .catch(() => {
+        // Network error — still show the cards with defaults
+        setPickupSettings({
+          pickupEnabled: true,
+          asapPickupEnabled: true,
+          scheduledPickupEnabled: true,
+          defaultPreparationMinutes: 25,
+          availableDates: [],
+          asapEstimate: null,
+          timezone: 'Australia/Melbourne',
+        })
+      })
       .finally(() => setPickupLoading(false))
   }, [])
 

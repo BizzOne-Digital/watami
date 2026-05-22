@@ -52,7 +52,7 @@ export default function AdminMenuItemsPage() {
   const fetchItems = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '30' })
+      const params = new URLSearchParams({ page: String(page), limit: '200' })
       if (catFilter !== 'all') params.set('categoryId', catFilter)
       const res = await fetch(`/api/admin/menu-items?${params}`)
       const data = await res.json()

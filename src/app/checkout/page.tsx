@@ -7,15 +7,16 @@ import { z } from 'zod'
 import { toast } from 'sonner'
 import {
   ShoppingBag, Tag, X, Loader2, MapPin, Heart,
-  Zap, Clock,
+  Zap, Clock, ChevronDown,
 } from 'lucide-react'
 import Header from '@/components/layout/Header'
 import Footer from '@/components/layout/Footer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useCartStore } from '@/store/cartStore'
 import { formatCurrency } from '@/lib/utils'
+import { useCartStore } from '@/store/cartStore'
+import DrumTimePicker from '@/components/ui/DrumTimePicker'
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -40,7 +41,37 @@ interface PickupSettings {
 }
 
 interface PickupSlot {
-  time: string
+  value: string   // ISO string
+  label: string   // "Today 11:30 AM"
+  date: string    // "2025-05-22"
+  time: string    // "11:30"
+}
+
+function formatDateLabel(dateStr: string): string {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Melbourne',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date())
+  const tomorrow = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Melbourne',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(Date.now() + 86400000))
+
+  if (dateStr === today) return 'Today'
+  if (dateStr === tomorrow) return 'Tomorrow'
+  return new Date(`${dateStr}T12:00:00`).toLocaleDateString('en-AU', {
+    weekday: 'long', month: 'long', day: 'numeric',
+  })
+}
+
+const FALLBACK_SETTINGS: PickupSettings = {
+  pickupEnabled: true,
+  asapPickupEnabled: true,
+  scheduledPickupEnabled: true,
+  defaultPreparationMinutes: 25,
+  availableDates: [],
+  asapEstimate: null,
+  timezone: 'Australia/Melbourne',
 }
 
 export default function CheckoutPage() {
@@ -56,9 +87,10 @@ export default function CheckoutPage() {
   const [pickupType, setPickupType] = useState<PickupType>('asap')
   const [pickupSettings, setPickupSettings] = useState<PickupSettings | null>(null)
   const [pickupLoading, setPickupLoading] = useState(true)
-  const [selectedTime, setSelectedTime] = useState('') // "HH:MM" string
-  const [timeError, setTimeError] = useState('')
-  const [availableTimes, setAvailableTimes] = useState<string[]>([]) // ["11:00","11:15",...]
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedSlot, setSelectedSlot] = useState('')
+  const [slots, setSlots] = useState<PickupSlot[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
 
   // Derived totals
   const subtotal = getSubtotal()
@@ -70,53 +102,42 @@ export default function CheckoutPage() {
     resolver: zodResolver(checkoutSchema),
   })
 
-  // Load pickup settings on mount
+  // Load pickup settings from DB on mount
   useEffect(() => {
     fetch('/api/pickup-slots')
       .then(r => r.json())
       .then(data => {
         if (data.error) {
-          setPickupSettings({
-            pickupEnabled: true,
-            asapPickupEnabled: true,
-            scheduledPickupEnabled: true,
-            defaultPreparationMinutes: 25,
-            availableDates: [],
-            asapEstimate: null,
-            timezone: 'Australia/Melbourne',
-          })
+          setPickupSettings(FALLBACK_SETTINGS)
           return
         }
         setPickupSettings(data)
         if (!data.asapPickupEnabled && data.scheduledPickupEnabled) {
           setPickupType('scheduled')
         }
-        // Load today's available times
         if (data.availableDates?.length > 0) {
-          const today = data.availableDates[0]
-          fetch(`/api/pickup-slots?date=${today}`)
-            .then(r => r.json())
-            .then(slotData => {
-              const times = (slotData.slots ?? []).map((s: PickupSlot) => s.time)
-              setAvailableTimes(times)
-              if (times.length > 0) setSelectedTime(times[0])
-            })
-            .catch(() => {})
+          setSelectedDate(data.availableDates[0])
         }
       })
-      .catch(() => {
-        setPickupSettings({
-          pickupEnabled: true,
-          asapPickupEnabled: true,
-          scheduledPickupEnabled: true,
-          defaultPreparationMinutes: 25,
-          availableDates: [],
-          asapEstimate: null,
-          timezone: 'Australia/Melbourne',
-        })
-      })
+      .catch(() => setPickupSettings(FALLBACK_SETTINGS))
       .finally(() => setPickupLoading(false))
   }, [])
+
+  // Load time slots from DB when date changes
+  useEffect(() => {
+    if (!selectedDate || pickupType !== 'scheduled') return
+    setSlotsLoading(true)
+    setSelectedSlot('')
+    fetch(`/api/pickup-slots?date=${selectedDate}`)
+      .then(r => r.json())
+      .then(data => {
+        const fetchedSlots: PickupSlot[] = data.slots ?? []
+        setSlots(fetchedSlots)
+        if (fetchedSlots.length > 0) setSelectedSlot(fetchedSlots[0].value)
+      })
+      .catch(() => toast.error('Failed to load time slots'))
+      .finally(() => setSlotsLoading(false))
+  }, [selectedDate, pickupType])
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return
@@ -139,29 +160,13 @@ export default function CheckoutPage() {
   }
 
   const onSubmit = async (data: CheckoutForm) => {
-    if (pickupType === 'scheduled') {
-      if (!selectedTime) {
-        toast.error('Please select a pickup time.')
-        return
-      }
-      if (timeError) {
-        toast.error(timeError)
-        return
-      }
+    if (pickupType === 'scheduled' && !selectedSlot) {
+      toast.error('Please select a pickup time.')
+      return
     }
 
     setRedirecting(true)
     try {
-      // Build a full ISO datetime for today + selected time in Melbourne
-      let requestedPickupTime: string | null = null
-      if (pickupType === 'scheduled' && selectedTime) {
-        const today = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'Australia/Melbourne',
-          year: 'numeric', month: '2-digit', day: '2-digit',
-        }).format(new Date())
-        // Build as a local Melbourne datetime string and let the server validate
-        requestedPickupTime = new Date(`${today}T${selectedTime}:00`).toISOString()
-      }
       const res = await fetch('/api/payment/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,7 +182,7 @@ export default function CheckoutPage() {
           couponCode: couponCode || undefined,
           tipPercentage,
           pickupType,
-          requestedPickupTime: pickupType === 'scheduled' ? requestedPickupTime : null,
+          requestedPickupTime: pickupType === 'scheduled' ? selectedSlot : null,
         }),
       })
 
@@ -215,6 +220,8 @@ export default function CheckoutPage() {
       </>
     )
   }
+
+  const selectedSlotObj = slots.find(s => s.value === selectedSlot)
 
   return (
     <>
@@ -267,6 +274,7 @@ export default function CheckoutPage() {
                     </div>
                   ) : (
                     <div className="space-y-3">
+
                       {/* ASAP card */}
                       {pickupSettings?.asapPickupEnabled && (
                         <button
@@ -331,47 +339,74 @@ export default function CheckoutPage() {
                                 <span className="font-bold text-charcoal">Select Time (Later)</span>
                               </div>
                               <p className="text-gray-500 text-sm mt-0.5">
-                                Choose a pickup time for later today.
+                                Choose a pickup time for later today or a future available day.
                               </p>
                             </div>
                           </div>
                         </button>
                       )}
 
-                      {/* Time picker (shown when scheduled selected) */}
+                      {/* Date + time picker — shown when scheduled is selected */}
                       {pickupType === 'scheduled' && (
-                        <div className="mt-2 pl-1 space-y-2">
-                          <Label className="text-sm font-medium text-charcoal">Pickup Time</Label>
-                          <input
-                            type="time"
-                            value={selectedTime}
-                            onChange={e => {
-                              const t = e.target.value
-                              setSelectedTime(t)
-                              // Validate against available times
-                              if (availableTimes.length > 0 && !availableTimes.includes(t)) {
-                                setTimeError(`Please choose an available time. Next available: ${availableTimes[0]}`)
-                              } else {
-                                setTimeError('')
-                              }
-                            }}
-                            className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-burgundy"
-                          />
-                          {timeError && (
-                            <p className="text-red-500 text-xs">{timeError}</p>
-                          )}
-                          {availableTimes.length > 0 && (
-                            <p className="text-gray-400 text-xs">
-                              Available from {availableTimes[0]} to {availableTimes[availableTimes.length - 1]}
-                            </p>
-                          )}
-                          {selectedTime && !timeError && (
+                        <div className="mt-3 space-y-4 pl-1">
+
+                          {/* Date picker — only allows available dates from DB */}
+                          <div>
+                            <Label className="text-sm font-medium text-charcoal">Pickup Date</Label>
+                            <input
+                              type="date"
+                              value={selectedDate}
+                              min={pickupSettings?.availableDates[0] ?? ''}
+                              max={pickupSettings?.availableDates[pickupSettings.availableDates.length - 1] ?? ''}
+                              onChange={e => {
+                                const val = e.target.value
+                                // Only allow dates that are actually available
+                                if (pickupSettings?.availableDates.includes(val)) {
+                                  setSelectedDate(val)
+                                } else if (val) {
+                                  toast.error('That date is not available for pickup. Please choose another.')
+                                }
+                              }}
+                              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-burgundy"
+                            />
+                            {pickupSettings?.availableDates && pickupSettings.availableDates.length > 0 && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                Available: {formatDateLabel(pickupSettings.availableDates[0])} – {formatDateLabel(pickupSettings.availableDates[pickupSettings.availableDates.length - 1])}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Time picker — drum/scroll wheel style */}
+                          <div>
+                            <Label className="text-sm font-medium text-charcoal">Pickup Time</Label>
+                            {slotsLoading ? (
+                              <div className="flex items-center gap-2 text-gray-400 text-sm mt-2">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading times...
+                              </div>
+                            ) : slots.length === 0 ? (
+                              <p className="text-sm text-orange mt-2">No available times for this date.</p>
+                            ) : (
+                              <div className="mt-2 border border-gray-200 rounded-xl overflow-hidden bg-white">
+                                <DrumTimePicker
+                                  slots={slots.map(s => s.time)}
+                                  value={slots.find(s => s.value === selectedSlot)?.time ?? slots[0]?.time ?? ''}
+                                  onChange={(time) => {
+                                    const match = slots.find(s => s.time === time)
+                                    if (match) setSelectedSlot(match.value)
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {selectedSlotObj && (
                             <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700 font-medium">
-                              ✓ Pickup today at {selectedTime}
+                              ✓ Pickup: {selectedSlotObj.label}
                             </div>
                           )}
                         </div>
                       )}
+
                     </div>
                   )}
                 </div>
@@ -447,7 +482,7 @@ export default function CheckoutPage() {
                 {/* Pay button */}
                 <Button
                   type="submit"
-                  disabled={redirecting || (pickupType === 'scheduled' && (!selectedTime || !!timeError))}
+                  disabled={redirecting || (pickupType === 'scheduled' && !selectedSlot)}
                   className="w-full bg-burgundy hover:bg-burgundy-dark text-white h-14 text-base font-semibold shadow-lg"
                 >
                   {redirecting ? (
@@ -487,10 +522,10 @@ export default function CheckoutPage() {
                     {pickupType === 'asap' && pickupSettings?.asapEstimate && (
                       <p className="text-gray-500 text-xs mt-0.5">Est. {pickupSettings.asapEstimate.label}</p>
                     )}
-                    {pickupType === 'scheduled' && selectedTime && !timeError && (
-                      <p className="text-gray-500 text-xs mt-0.5">Today at {selectedTime}</p>
+                    {pickupType === 'scheduled' && selectedSlotObj && (
+                      <p className="text-gray-500 text-xs mt-0.5">{selectedSlotObj.label}</p>
                     )}
-                    {pickupType === 'scheduled' && !selectedTime && (
+                    {pickupType === 'scheduled' && !selectedSlotObj && (
                       <p className="text-orange text-xs mt-0.5">No time selected</p>
                     )}
                   </div>

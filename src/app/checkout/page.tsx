@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,7 +16,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { formatCurrency } from '@/lib/utils'
 import { useCartStore } from '@/store/cartStore'
-import DrumTimePicker from '@/components/ui/DrumTimePicker'
 
 const checkoutSchema = z.object({
   customerName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -72,6 +71,75 @@ const FALLBACK_SETTINGS: PickupSettings = {
   availableDates: [],
   asapEstimate: null,
   timezone: 'Australia/Melbourne',
+}
+
+// ── Time Picker Input ──────────────────────────────────────────────────────
+// A text field with a clock icon that opens a native <input type="time">
+// Only allows times that exist in the available slots from the DB.
+function TimePickerInput({
+  slots,
+  selectedSlot,
+  onSelect,
+}: {
+  slots: PickupSlot[]
+  selectedSlot: string
+  onSelect: (value: string) => void
+}) {
+  const timeInputRef = useRef<HTMLInputElement>(null)
+  const selectedObj = slots.find(s => s.value === selectedSlot)
+  const slotTimes = slots.map(s => s.time) // ["11:00","11:15",...]
+
+  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = e.target.value // "HH:MM"
+    if (!picked) return
+    // Find the closest available slot
+    const exact = slots.find(s => s.time === picked)
+    if (exact) {
+      onSelect(exact.value)
+      return
+    }
+    // Snap to nearest available slot
+    const [ph, pm] = picked.split(':').map(Number)
+    const pickedMins = ph * 60 + pm
+    let closest = slots[0]
+    let minDiff = Infinity
+    for (const slot of slots) {
+      const [sh, sm] = slot.time.split(':').map(Number)
+      const diff = Math.abs(sh * 60 + sm - pickedMins)
+      if (diff < minDiff) { minDiff = diff; closest = slot }
+    }
+    onSelect(closest.value)
+  }
+
+  return (
+    <div className="mt-1 space-y-2">
+      {/* Input row with clock icon */}
+      <div
+        className="flex items-center gap-3 w-full rounded-lg border border-gray-300 px-3 py-2.5 bg-white cursor-pointer hover:border-burgundy transition-colors"
+        onClick={() => timeInputRef.current?.showPicker?.()}
+      >
+        <Clock className="w-5 h-5 text-burgundy flex-shrink-0" />
+        <span className={`flex-1 text-sm ${selectedObj ? 'text-charcoal font-medium' : 'text-gray-400'}`}>
+          {selectedObj ? selectedObj.time : 'Select a time'}
+        </span>
+        {/* Hidden native time input */}
+        <input
+          ref={timeInputRef}
+          type="time"
+          value={selectedObj?.time ?? ''}
+          min={slotTimes[0]}
+          max={slotTimes[slotTimes.length - 1]}
+          onChange={handleTimeChange}
+          className="sr-only"
+          tabIndex={-1}
+        />
+        <span className="text-xs text-gray-400">tap to change</span>
+      </div>
+      <p className="text-xs text-gray-400">
+        Available: {slotTimes[0]} – {slotTimes[slotTimes.length - 1]}
+      </p>
+    </div>
+  )
 }
 
 export default function CheckoutPage() {
@@ -376,7 +444,7 @@ export default function CheckoutPage() {
                             )}
                           </div>
 
-                          {/* Time picker — drum/scroll wheel style */}
+                          {/* Time picker — clock icon opens native time picker */}
                           <div>
                             <Label className="text-sm font-medium text-charcoal">Pickup Time</Label>
                             {slotsLoading ? (
@@ -386,16 +454,11 @@ export default function CheckoutPage() {
                             ) : slots.length === 0 ? (
                               <p className="text-sm text-orange mt-2">No available times for this date.</p>
                             ) : (
-                              <div className="mt-2 border border-gray-200 rounded-xl overflow-hidden bg-white">
-                                <DrumTimePicker
-                                  slots={slots.map(s => s.time)}
-                                  value={slots.find(s => s.value === selectedSlot)?.time ?? slots[0]?.time ?? ''}
-                                  onChange={(time) => {
-                                    const match = slots.find(s => s.time === time)
-                                    if (match) setSelectedSlot(match.value)
-                                  }}
-                                />
-                              </div>
+                              <TimePickerInput
+                                slots={slots}
+                                selectedSlot={selectedSlot}
+                                onSelect={setSelectedSlot}
+                              />
                             )}
                           </div>
 

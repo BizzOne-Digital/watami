@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import {
   LayoutDashboard, Users, Tag, UtensilsCrossed, ShoppingBag,
-  Megaphone, Settings, LogOut, Menu, X, ChevronRight
+  Megaphone, Settings, LogOut, Menu, X, ChevronRight, Clock
 } from 'lucide-react'
 
 const navItems = [
@@ -15,6 +15,7 @@ const navItems = [
   { href: '/admin/menu-items', label: 'Menu Items', icon: UtensilsCrossed },
   { href: '/admin/categories', label: 'Categories', icon: Tag },
   { href: '/admin/promotions', label: 'Promotions', icon: Megaphone },
+  { href: '/admin/pickup-settings', label: 'Pickup Settings', icon: Clock },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ]

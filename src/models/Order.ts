@@ -1,5 +1,7 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose'
 
+export type PickupType = 'asap' | 'scheduled'
+
 export interface IOrderItem {
   menuItemId: Types.ObjectId
   name: string
@@ -21,6 +23,11 @@ export interface IOrder extends Document {
   total: number
   couponCode?: string
   pickupOnly: boolean
+  // Pickup scheduling
+  pickupType: PickupType
+  requestedPickupTime: Date | null
+  estimatedPickupTime: Date | null
+  pickupWindowLabel: string
   status:
     | 'pending_payment'
     | 'pending'
@@ -66,6 +73,17 @@ const OrderSchema = new Schema<IOrder>(
     total: { type: Number, required: true },
     couponCode: { type: String },
     pickupOnly: { type: Boolean, default: true },
+    // Pickup scheduling
+    pickupType: {
+      type: String,
+      enum: ['asap', 'scheduled'],
+      required: true,
+      default: 'asap',
+      index: true,
+    },
+    requestedPickupTime: { type: Date, default: null },
+    estimatedPickupTime: { type: Date, default: null },
+    pickupWindowLabel: { type: String, default: 'ASAP' },
     status: {
       type: String,
       enum: [
@@ -92,6 +110,8 @@ const OrderSchema = new Schema<IOrder>(
 
 OrderSchema.index({ createdAt: -1 })
 OrderSchema.index({ status: 1, createdAt: -1 })
+OrderSchema.index({ pickupType: 1, createdAt: -1 })
+OrderSchema.index({ requestedPickupTime: 1 })
 
 const Order: Model<IOrder> =
   mongoose.models.Order || mongoose.model<IOrder>('Order', OrderSchema)

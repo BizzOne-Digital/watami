@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
   const query: Record<string, unknown> = {}
   if (status) query.status = status
   if (since) query.createdAt = { $gt: new Date(since) }
+  const pickupType = searchParams.get('pickupType')
+  if (pickupType) query.pickupType = pickupType
   if (search) {
     query.$or = [
       { orderNumber: { $regex: search, $options: 'i' } },

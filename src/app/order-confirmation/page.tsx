@@ -1,11 +1,63 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
-import { CheckCircle, MapPin, Clock, ShoppingBag } from 'lucide-react'
+import { CheckCircle, MapPin, Clock, ShoppingBag, Zap } from 'lucide-react'
 import Header from '@/components/layout/Header'
 import Footer from '@/components/layout/Footer'
 import { Button } from '@/components/ui/button'
+import { connectDB } from '@/lib/db'
+import Order from '@/models/Order'
 
-function OrderConfirmationContent({ orderNumber }: { orderNumber: string }) {
+async function getOrder(orderNumber: string) {
+  try {
+    await connectDB()
+    const order = await Order.findOne({ orderNumber }).lean()
+    return order
+  } catch {
+    return null
+  }
+}
+
+function formatPickupDisplay(order: {
+  pickupType?: string
+  pickupWindowLabel?: string
+  estimatedPickupTime?: Date | string | null
+  requestedPickupTime?: Date | string | null
+}): { icon: React.ReactNode; title: string; detail: string } {
+  if (order.pickupType === 'scheduled' && (order.requestedPickupTime)) {
+    const t = new Date(order.requestedPickupTime)
+    const label = t.toLocaleString('en-AU', {
+      timeZone: 'Australia/Melbourne',
+      weekday: 'short', month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', hour12: true,
+    })
+    return {
+      icon: <Clock className="w-4 h-4 text-orange" />,
+      title: 'Scheduled Pickup',
+      detail: label,
+    }
+  }
+  return {
+    icon: <Zap className="w-4 h-4 text-orange" />,
+    title: 'Pick Up ASAP',
+    detail: order.estimatedPickupTime
+      ? `Est. ${new Date(order.estimatedPickupTime).toLocaleTimeString('en-AU', {
+          timeZone: 'Australia/Melbourne',
+          hour: 'numeric', minute: '2-digit', hour12: true,
+        })}`
+      : 'As soon as possible',
+  }
+}
+
+async function OrderConfirmationInner({
+  searchParams,
+}: {
+  searchParams: Promise<{ order?: string }>
+}) {
+  const params = await searchParams
+  const orderNumber = params.order ?? 'Unknown'
+  const order = orderNumber !== 'Unknown' ? await getOrder(orderNumber) : null
+  const pickup = order ? formatPickupDisplay(order) : null
+
   return (
     <div className="max-w-lg mx-auto px-4 py-20 text-center">
       <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -16,12 +68,24 @@ function OrderConfirmationContent({ orderNumber }: { orderNumber: string }) {
         Thank you for your order. We&apos;ll have it ready for pickup soon.
       </p>
 
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-cream-dark mb-6 text-left">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-cream-dark mb-6 text-left space-y-3">
+        <div className="flex items-center justify-between">
           <span className="text-gray-500 text-sm">Order Number</span>
           <code className="font-mono font-bold text-burgundy text-lg">{orderNumber}</code>
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+
+        {/* Pickup info */}
+        {pickup && (
+          <div className="bg-cream rounded-xl px-4 py-3">
+            <div className="flex items-center gap-2 font-semibold text-charcoal text-sm mb-1">
+              {pickup.icon}
+              {pickup.title}
+            </div>
+            <p className="text-gray-600 text-sm">{pickup.detail}</p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 text-sm text-gray-600">
           <Clock className="w-4 h-4 text-orange" />
           <span>Status: <strong className="text-charcoal">Pending</strong></span>
         </div>
@@ -40,24 +104,16 @@ function OrderConfirmationContent({ orderNumber }: { orderNumber: string }) {
 
       <div className="flex flex-col sm:flex-row gap-3 justify-center">
         <Link href="/">
-          <Button className="bg-burgundy hover:bg-burgundy-dark text-white">
-            Back to Home
-          </Button>
+          <Button className="bg-burgundy hover:bg-burgundy-dark text-white">Back to Home</Button>
         </Link>
         <Link href="/#menu">
           <Button variant="outline" className="border-burgundy text-burgundy hover:bg-burgundy hover:text-white">
-            <ShoppingBag className="w-4 h-4 mr-2" />
-            Order More
+            <ShoppingBag className="w-4 h-4 mr-2" />Order More
           </Button>
         </Link>
       </div>
     </div>
   )
-}
-
-function OrderConfirmationWrapper() {
-  // This is a client component wrapper - we use searchParams via URL
-  return null
 }
 
 export default function OrderConfirmationPage({
@@ -76,10 +132,4 @@ export default function OrderConfirmationPage({
       <Footer />
     </>
   )
-}
-
-async function OrderConfirmationInner({ searchParams }: { searchParams: Promise<{ order?: string }> }) {
-  const params = await searchParams
-  const orderNumber = params.order ?? 'Unknown'
-  return <OrderConfirmationContent orderNumber={orderNumber} />
 }

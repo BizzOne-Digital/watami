@@ -73,75 +73,6 @@ const FALLBACK_SETTINGS: PickupSettings = {
   timezone: 'Australia/Melbourne',
 }
 
-// ── Time Picker Input ──────────────────────────────────────────────────────
-// A text field with a clock icon that opens a native <input type="time">
-// Only allows times that exist in the available slots from the DB.
-function TimePickerInput({
-  slots,
-  selectedSlot,
-  onSelect,
-}: {
-  slots: PickupSlot[]
-  selectedSlot: string
-  onSelect: (value: string) => void
-}) {
-  const timeInputRef = useRef<HTMLInputElement>(null)
-  const selectedObj = slots.find(s => s.value === selectedSlot)
-  const slotTimes = slots.map(s => s.time) // ["11:00","11:15",...]
-
-  const handleTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.value // "HH:MM"
-    if (!picked) return
-    // Find the closest available slot
-    const exact = slots.find(s => s.time === picked)
-    if (exact) {
-      onSelect(exact.value)
-      return
-    }
-    // Snap to nearest available slot
-    const [ph, pm] = picked.split(':').map(Number)
-    const pickedMins = ph * 60 + pm
-    let closest = slots[0]
-    let minDiff = Infinity
-    for (const slot of slots) {
-      const [sh, sm] = slot.time.split(':').map(Number)
-      const diff = Math.abs(sh * 60 + sm - pickedMins)
-      if (diff < minDiff) { minDiff = diff; closest = slot }
-    }
-    onSelect(closest.value)
-  }
-
-  return (
-    <div className="mt-1 space-y-2">
-      {/* Input row with clock icon */}
-      <div
-        className="flex items-center gap-3 w-full rounded-lg border border-gray-300 px-3 py-2.5 bg-white cursor-pointer hover:border-burgundy transition-colors"
-        onClick={() => timeInputRef.current?.showPicker?.()}
-      >
-        <Clock className="w-5 h-5 text-burgundy flex-shrink-0" />
-        <span className={`flex-1 text-sm ${selectedObj ? 'text-charcoal font-medium' : 'text-gray-400'}`}>
-          {selectedObj ? selectedObj.time : 'Select a time'}
-        </span>
-        {/* Hidden native time input */}
-        <input
-          ref={timeInputRef}
-          type="time"
-          value={selectedObj?.time ?? ''}
-          min={slotTimes[0]}
-          max={slotTimes[slotTimes.length - 1]}
-          onChange={handleTimeChange}
-          className="sr-only"
-          tabIndex={-1}
-        />
-        <span className="text-xs text-gray-400">tap to change</span>
-      </div>
-      <p className="text-xs text-gray-400">
-        Available: {slotTimes[0]} – {slotTimes[slotTimes.length - 1]}
-      </p>
-    </div>
-  )
-}
-
 export default function CheckoutPage() {
   const router = useRouter()
   const { items, getSubtotal, discountAmount, couponCode, setCoupon, clearCoupon } = useCartStore()
@@ -201,7 +132,8 @@ export default function CheckoutPage() {
       .then(data => {
         const fetchedSlots: PickupSlot[] = data.slots ?? []
         setSlots(fetchedSlots)
-        if (fetchedSlots.length > 0) setSelectedSlot(fetchedSlots[0].value)
+        // Store the time string "HH:MM" directly — no ISO mismatch issues
+        if (fetchedSlots.length > 0) setSelectedSlot(fetchedSlots[0].time)
       })
       .catch(() => toast.error('Failed to load time slots'))
       .finally(() => setSlotsLoading(false))
@@ -235,6 +167,10 @@ export default function CheckoutPage() {
 
     setRedirecting(true)
     try {
+      // Look up the ISO value from the selected time string
+      const isoPickupTime = pickupType === 'scheduled'
+        ? (slots.find(s => s.time === selectedSlot)?.value ?? null)
+        : null
       const res = await fetch('/api/payment/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -250,7 +186,7 @@ export default function CheckoutPage() {
           couponCode: couponCode || undefined,
           tipPercentage,
           pickupType,
-          requestedPickupTime: pickupType === 'scheduled' ? selectedSlot : null,
+          requestedPickupTime: isoPickupTime,
         }),
       })
 
@@ -289,7 +225,7 @@ export default function CheckoutPage() {
     )
   }
 
-  const selectedSlotObj = slots.find(s => s.value === selectedSlot)
+  const selectedSlotObj = slots.find(s => s.time === selectedSlot)
 
   return (
     <>
@@ -444,7 +380,7 @@ export default function CheckoutPage() {
                             )}
                           </div>
 
-                          {/* Time picker — clock icon opens native time picker */}
+                          {/* Pickup Time */}
                           <div>
                             <Label className="text-sm font-medium text-charcoal">Pickup Time</Label>
                             {slotsLoading ? (
@@ -454,11 +390,22 @@ export default function CheckoutPage() {
                             ) : slots.length === 0 ? (
                               <p className="text-sm text-orange mt-2">No available times for this date.</p>
                             ) : (
-                              <TimePickerInput
-                                slots={slots}
-                                selectedSlot={selectedSlot}
-                                onSelect={setSelectedSlot}
-                              />
+                              <div className="mt-1 space-y-1">
+                                <div className="relative flex items-center">
+                                  <Clock className="absolute left-3 w-5 h-5 text-burgundy pointer-events-none z-10" />
+                                  <input
+                                    type="time"
+                                    value={selectedSlot}
+                                    onChange={e => {
+                                      if (e.target.value) setSelectedSlot(e.target.value)
+                                    }}
+                                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm text-charcoal font-medium bg-white focus:outline-none focus:ring-2 focus:ring-burgundy cursor-pointer"
+                                  />
+                                </div>
+                                <p className="text-xs text-gray-400">
+                                  Available: {slots[0]?.time} – {slots[slots.length - 1]?.time}
+                                </p>
+                              </div>
                             )}
                           </div>
 

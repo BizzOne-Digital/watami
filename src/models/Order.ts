@@ -43,6 +43,7 @@ export interface IOrder extends Document {
     | 'completed'
     | 'cancelled'
   paymentIntentId?: string
+  stripeCheckoutSessionId?: string
   paymentStatus?: 'unpaid' | 'paid' | 'failed'
   // Email idempotency flags
   merchantNotificationEmailSent: boolean
@@ -113,6 +114,7 @@ const OrderSchema = new Schema<IOrder>(
       index: true,
     },
     paymentIntentId: { type: String, index: true },
+    stripeCheckoutSessionId: { type: String, index: true },
     paymentStatus: {
       type: String,
       enum: ['unpaid', 'paid', 'failed'],

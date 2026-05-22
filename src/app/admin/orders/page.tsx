@@ -7,17 +7,28 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatCurrency } from '@/lib/utils'
 
-const STATUS_OPTIONS = ['all', 'pending_payment', 'pending', 'accepted', 'preparing', 'ready_for_pickup', 'completed', 'cancelled']
+// Workflow statuses admin can set (excludes pending_payment — that's pre-payment only)
+const WORKFLOW_STATUSES = ['pending', 'accepted', 'preparing', 'ready_for_pickup', 'completed', 'cancelled']
+const STATUS_FILTER_OPTIONS = ['all', 'pending_payment', 'pending', 'accepted', 'preparing', 'ready_for_pickup', 'completed', 'cancelled']
+const PAYMENT_FILTER_OPTIONS = ['all', 'unpaid', 'paid', 'failed']
 const PICKUP_FILTER_OPTIONS = ['all', 'asap', 'scheduled']
 
+// Workflow status badge colours
 const STATUS_COLORS: Record<string, string> = {
   pending_payment: 'bg-purple-100 text-purple-700',
-  pending: 'bg-yellow-100 text-yellow-700',
-  accepted: 'bg-blue-100 text-blue-700',
-  preparing: 'bg-orange-100 text-orange-700',
-  ready_for_pickup: 'bg-green-100 text-green-700',
-  completed: 'bg-gray-100 text-gray-700',
-  cancelled: 'bg-red-100 text-red-700',
+  pending:         'bg-yellow-100 text-yellow-700',
+  accepted:        'bg-blue-100 text-blue-700',
+  preparing:       'bg-orange-100 text-orange-700',
+  ready_for_pickup:'bg-teal-100 text-teal-700',
+  completed:       'bg-gray-100 text-gray-600',
+  cancelled:       'bg-red-100 text-red-700',
+}
+
+// Payment status badge colours
+const PAYMENT_COLORS: Record<string, string> = {
+  unpaid: 'bg-yellow-100 text-yellow-700',
+  paid:   'bg-green-100 text-green-700',
+  failed: 'bg-red-100 text-red-700',
 }
 
 interface Order {
@@ -31,6 +42,8 @@ interface Order {
   discountAmount: number
   tipAmount: number
   status: string
+  paymentStatus: 'unpaid' | 'paid' | 'failed'
+  paymentIntentId?: string
   items: { name: string; quantity: number; price: number; specialInstructions?: string }[]
   createdAt: string
   couponCode?: string
@@ -42,8 +55,7 @@ interface Order {
 
 function PickupBadge({ order }: { order: Order }) {
   if (order.pickupType === 'scheduled' && order.requestedPickupTime) {
-    const t = new Date(order.requestedPickupTime)
-    const label = t.toLocaleString('en-AU', {
+    const label = new Date(order.requestedPickupTime).toLocaleString('en-AU', {
       timeZone: 'Australia/Melbourne',
       month: 'short', day: 'numeric',
       hour: 'numeric', minute: '2-digit', hour12: true,
@@ -61,12 +73,48 @@ function PickupBadge({ order }: { order: Order }) {
   )
 }
 
+/**
+ * Combined status cell — shows payment badge + workflow badge together.
+ * When paymentStatus=paid + status=pending, shows "✅ Paid — New Order"
+ * so admin immediately knows this is a confirmed, actionable order.
+ */
+function StatusCell({ order }: { order: Order }) {
+  const isPaid = order.paymentStatus === 'paid'
+  const isUnpaid = order.paymentStatus === 'unpaid' || !order.paymentStatus
+  const isFailed = order.paymentStatus === 'failed'
+
+  // Payment badge
+  const paymentBadge = (
+    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${PAYMENT_COLORS[order.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+      {isPaid ? '✅ Paid' : isFailed ? '❌ Failed' : '⏳ Unpaid'}
+    </span>
+  )
+
+  // Workflow badge — only show if meaningful (not pending_payment when unpaid — redundant)
+  const showWorkflow = !(isUnpaid && order.status === 'pending_payment')
+  const workflowLabel = order.status === 'pending' && isPaid
+    ? 'New Order'           // "pending" after payment = new confirmed order waiting action
+    : order.status.replace(/_/g, ' ')
+
+  return (
+    <div className="flex flex-col gap-1">
+      {paymentBadge}
+      {showWorkflow && (
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-600'}`}>
+          {workflowLabel}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [paymentFilter, setPaymentFilter] = useState('all')
   const [pickupFilter, setPickupFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
@@ -77,6 +125,7 @@ export default function AdminOrdersPage() {
       const params = new URLSearchParams({ page: String(page), limit: '20' })
       if (search) params.set('search', search)
       if (statusFilter !== 'all') params.set('status', statusFilter)
+      if (paymentFilter !== 'all') params.set('paymentStatus', paymentFilter)
       if (pickupFilter !== 'all') params.set('pickupType', pickupFilter)
       const res = await fetch(`/api/admin/orders?${params}`)
       const data = await res.json()
@@ -87,7 +136,7 @@ export default function AdminOrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, statusFilter, pickupFilter])
+  }, [page, search, statusFilter, paymentFilter, pickupFilter])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
 
@@ -121,8 +170,8 @@ export default function AdminOrdersPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-3 mb-6 flex-wrap">
+        <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <Input
             placeholder="Search by order number, name, email..."
@@ -131,16 +180,36 @@ export default function AdminOrdersPage() {
             className="pl-9"
           />
         </div>
+
+        {/* Payment filter */}
+        <Select value={paymentFilter} onValueChange={(v) => { setPaymentFilter(v); setPage(1) }}>
+          <SelectTrigger className="w-full sm:w-40">
+            <SelectValue placeholder="All payments" />
+          </SelectTrigger>
+          <SelectContent>
+            {PAYMENT_FILTER_OPTIONS.map((p) => (
+              <SelectItem key={p} value={p}>
+                {p === 'all' ? 'All Payments' : p === 'paid' ? '✅ Paid' : p === 'unpaid' ? '⏳ Unpaid' : '❌ Failed'}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Status filter */}
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
           <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>{s === 'all' ? 'All Statuses' : s.replace(/_/g, ' ')}</SelectItem>
+            {STATUS_FILTER_OPTIONS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s === 'all' ? 'All Statuses' : s.replace(/_/g, ' ')}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
+
+        {/* Pickup filter */}
         <Select value={pickupFilter} onValueChange={(v) => { setPickupFilter(v); setPage(1) }}>
           <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="All pickup types" />
@@ -172,7 +241,7 @@ export default function AdminOrdersPage() {
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Total</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600">Status</th>
                   <th className="text-left px-4 py-3 font-semibold text-gray-600 hidden sm:table-cell">Date</th>
-                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Actions</th>
+                  <th className="text-left px-4 py-3 font-semibold text-gray-600">Update</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -192,26 +261,37 @@ export default function AdminOrdersPage() {
                       <td className="px-4 py-3">
                         <PickupBadge order={order} />
                       </td>
-                      <td className="px-4 py-3 font-semibold text-charcoal">{formatCurrency(order.total)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {order.status.replace(/_/g, ' ')}
-                        </span>
+                      <td className="px-4 py-3 font-semibold text-charcoal">
+                        {formatCurrency(order.total)}
                       </td>
+
+                      {/* Combined payment + workflow status */}
+                      <td className="px-4 py-3">
+                        <StatusCell order={order} />
+                      </td>
+
                       <td className="px-4 py-3 text-gray-500 text-xs hidden sm:table-cell">
                         {new Date(order.createdAt).toLocaleDateString('en-AU')}
                       </td>
+
+                      {/* Workflow update dropdown — disabled until paid */}
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <Select value={order.status} onValueChange={(v) => updateStatus(order._id, v)}>
-                          <SelectTrigger className="h-8 text-xs w-36">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STATUS_OPTIONS.filter(s => s !== 'all').map((s) => (
-                              <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {order.paymentStatus === 'paid' ? (
+                          <Select value={order.status} onValueChange={(v) => updateStatus(order._id, v)}>
+                            <SelectTrigger className="h-8 text-xs w-36">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {WORKFLOW_STATUSES.map((s) => (
+                                <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">
+                            {order.paymentStatus === 'failed' ? 'Payment failed' : 'Awaiting payment'}
+                          </span>
+                        )}
                       </td>
                     </tr>
 
@@ -220,6 +300,7 @@ export default function AdminOrdersPage() {
                       <tr className="bg-cream">
                         <td colSpan={7} className="px-4 py-4">
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
                             {/* Items */}
                             <div>
                               <p className="font-semibold text-charcoal text-xs mb-2">Order Items</p>
@@ -256,12 +337,20 @@ export default function AdminOrdersPage() {
                               </div>
                             </div>
 
-                            {/* Customer */}
+                            {/* Customer + Payment */}
                             <div>
                               <p className="font-semibold text-charcoal text-xs mb-2">Customer</p>
                               <p className="text-xs text-gray-600">{order.customerName}</p>
                               <p className="text-xs text-gray-600">{order.customerPhone}</p>
                               <p className="text-xs text-gray-600">{order.customerEmail}</p>
+
+                              <p className="font-semibold text-charcoal text-xs mt-3 mb-1">Payment</p>
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${PAYMENT_COLORS[order.paymentStatus] ?? 'bg-gray-100 text-gray-600'}`}>
+                                {order.paymentStatus === 'paid' ? '✅ Paid' : order.paymentStatus === 'failed' ? '❌ Failed' : '⏳ Unpaid'}
+                              </span>
+                              {order.paymentIntentId && (
+                                <p className="text-xs text-gray-400 mt-1 font-mono break-all">{order.paymentIntentId}</p>
+                              )}
                             </div>
 
                             {/* Pickup detail */}
@@ -299,6 +388,7 @@ export default function AdminOrdersPage() {
                                 )}
                               </div>
                             </div>
+
                           </div>
                         </td>
                       </tr>

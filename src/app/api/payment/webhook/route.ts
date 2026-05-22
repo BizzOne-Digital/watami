@@ -11,10 +11,14 @@ export const dynamic = 'force-dynamic'
  * Mark an order as paid by its paymentIntentId, update popular items,
  * then fire confirmation emails. Returns the updated order (or null if not found).
  */
-async function markOrderPaid(paymentIntentId: string) {
-  const order = await Order.findOne({ paymentIntentId })
+async function markOrderPaid(paymentIntentId: string, orderNumberFallback?: string) {
+  // Try by paymentIntentId first; fall back to orderNumber from session metadata
+  let order = await Order.findOne({ paymentIntentId })
+  if (!order && orderNumberFallback) {
+    order = await Order.findOne({ orderNumber: orderNumberFallback })
+  }
   if (!order) {
-    console.warn(`[Webhook] No order found for paymentIntentId: ${paymentIntentId}`)
+    console.warn(`[Webhook] No order found for paymentIntentId: ${paymentIntentId}${orderNumberFallback ? ` / orderNumber: ${orderNumberFallback}` : ''}`)
     return
   }
 
@@ -22,6 +26,11 @@ async function markOrderPaid(paymentIntentId: string) {
   if (order.paymentStatus === 'paid') {
     console.log(`[Webhook] Order ${order.orderNumber} already marked paid — skipping.`)
     return
+  }
+
+  // Patch paymentIntentId if it was null at order creation time
+  if (!order.paymentIntentId) {
+    order.paymentIntentId = paymentIntentId
   }
 
   order.status = 'pending'
@@ -78,7 +87,18 @@ export async function POST(req: NextRequest) {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object
     if (session.payment_intent && session.payment_status === 'paid') {
-      await markOrderPaid(session.payment_intent as string)
+      await markOrderPaid(
+        session.payment_intent as string,
+        session.metadata?.orderNumber
+      )
+    } else if (!session.payment_intent && session.payment_status === 'paid' && session.metadata?.orderNumber) {
+      // payment_intent can be null for some payment methods — fall back to orderNumber
+      const order = await Order.findOne({ orderNumber: session.metadata.orderNumber })
+      if (order && order.paymentStatus !== 'paid') {
+        order.status = 'pending'
+        order.paymentStatus = 'paid'
+        await order.save()
+      }
     }
   }
 

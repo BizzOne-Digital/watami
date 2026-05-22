@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { toast } from 'sonner'
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Zap, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -177,9 +177,8 @@ export default function AdminOrdersPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {orders.map((order) => (
-                  <>
+                  <Fragment key={order._id}>
                     <tr
-                      key={order._id}
                       className="hover:bg-gray-50 cursor-pointer"
                       onClick={() => setExpandedOrder(expandedOrder === order._id ? null : order._id)}
                     >
@@ -218,7 +217,7 @@ export default function AdminOrdersPage() {
 
                     {/* Expanded detail row */}
                     {expandedOrder === order._id && (
-                      <tr key={`${order._id}-exp`} className="bg-cream">
+                      <tr className="bg-cream">
                         <td colSpan={7} className="px-4 py-4">
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             {/* Items */}
@@ -304,7 +303,7 @@ export default function AdminOrdersPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -1,29 +1,24 @@
-import { Suspense } from 'react'
+'use client'
+import { useEffect, useState, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { CheckCircle, MapPin, Clock, ShoppingBag, Zap } from 'lucide-react'
+import { CheckCircle, MapPin, Clock, ShoppingBag, Zap, Loader2 } from 'lucide-react'
 import Header from '@/components/layout/Header'
 import Footer from '@/components/layout/Footer'
 import { Button } from '@/components/ui/button'
-import { connectDB } from '@/lib/db'
-import Order from '@/models/Order'
 
-async function getOrder(orderNumber: string) {
-  try {
-    await connectDB()
-    const order = await Order.findOne({ orderNumber }).lean()
-    return order
-  } catch {
-    return null
-  }
-}
-
-function formatPickupDisplay(order: {
+interface OrderData {
+  orderNumber: string
   pickupType?: string
   pickupWindowLabel?: string
-  estimatedPickupTime?: Date | string | null
-  requestedPickupTime?: Date | string | null
-}): { icon: React.ReactNode; title: string; detail: string } {
-  if (order.pickupType === 'scheduled' && (order.requestedPickupTime)) {
+  estimatedPickupTime?: string | null
+  requestedPickupTime?: string | null
+  paymentStatus?: string
+  status?: string
+}
+
+function formatPickupDisplay(order: OrderData): { icon: React.ReactNode; title: string; detail: string } {
+  if (order.pickupType === 'scheduled' && order.requestedPickupTime) {
     const t = new Date(order.requestedPickupTime)
     const label = t.toLocaleString('en-AU', {
       timeZone: 'Australia/Melbourne',
@@ -48,15 +43,65 @@ function formatPickupDisplay(order: {
   }
 }
 
-async function OrderConfirmationInner({
-  searchParams,
-}: {
-  searchParams: Promise<{ order?: string }>
-}) {
-  const params = await searchParams
-  const orderNumber = params.order ?? 'Unknown'
-  const order = orderNumber !== 'Unknown' ? await getOrder(orderNumber) : null
+function OrderConfirmationInner() {
+  const searchParams = useSearchParams()
+  const orderNumber = searchParams.get('order') ?? 'Unknown'
+  const sessionId = searchParams.get('session_id')
+
+  const [order, setOrder] = useState<OrderData | null>(null)
+  const [verifying, setVerifying] = useState(true)
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false)
+
+  useEffect(() => {
+    if (orderNumber === 'Unknown') {
+      setVerifying(false)
+      return
+    }
+
+    async function verifyAndLoad() {
+      try {
+        // Step 1: verify payment with Stripe if we have a session_id
+        if (sessionId) {
+          const verifyRes = await fetch('/api/payment/verify-session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, orderNumber }),
+          })
+          const verifyData = await verifyRes.json()
+          if (verifyData.paid) {
+            setPaymentConfirmed(true)
+          }
+        }
+
+        // Step 2: fetch the order from our DB to display details
+        const orderRes = await fetch(`/api/orders/${orderNumber}`)
+        if (orderRes.ok) {
+          const data = await orderRes.json()
+          setOrder(data.order ?? null)
+          if (data.order?.paymentStatus === 'paid') {
+            setPaymentConfirmed(true)
+          }
+        }
+      } catch (err) {
+        console.error('Order confirmation error:', err)
+      } finally {
+        setVerifying(false)
+      }
+    }
+
+    verifyAndLoad()
+  }, [orderNumber, sessionId])
+
   const pickup = order ? formatPickupDisplay(order) : null
+
+  if (verifying) {
+    return (
+      <div className="max-w-lg mx-auto px-4 py-20 text-center">
+        <Loader2 className="w-10 h-10 animate-spin text-burgundy mx-auto mb-4" />
+        <p className="text-gray-500">Confirming your payment...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-lg mx-auto px-4 py-20 text-center">
@@ -87,7 +132,12 @@ async function OrderConfirmationInner({
 
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <Clock className="w-4 h-4 text-orange" />
-          <span>Status: <strong className="text-charcoal">Pending</strong></span>
+          <span>
+            Payment:{' '}
+            <strong className={paymentConfirmed ? 'text-green-600' : 'text-yellow-600'}>
+              {paymentConfirmed ? 'Confirmed ✓' : 'Processing...'}
+            </strong>
+          </span>
         </div>
         <div className="flex items-start gap-2 text-sm text-gray-600">
           <MapPin className="w-4 h-4 text-orange mt-0.5" />
@@ -116,17 +166,18 @@ async function OrderConfirmationInner({
   )
 }
 
-export default function OrderConfirmationPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ order?: string }>
-}) {
+export default function OrderConfirmationPage() {
   return (
     <>
       <Header />
       <main className="min-h-screen bg-cream pt-20">
-        <Suspense fallback={<div className="text-center py-20">Loading...</div>}>
-          <OrderConfirmationInner searchParams={searchParams} />
+        <Suspense fallback={
+          <div className="max-w-lg mx-auto px-4 py-20 text-center">
+            <Loader2 className="w-10 h-10 animate-spin text-burgundy mx-auto mb-4" />
+            <p className="text-gray-500">Confirming your payment...</p>
+          </div>
+        }>
+          <OrderConfirmationInner />
         </Suspense>
       </main>
       <Footer />

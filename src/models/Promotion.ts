@@ -42,7 +42,6 @@ const PromotionSchema = new Schema<IPromotion>(
 )
 
 PromotionSchema.index({ isActive: 1 })
-PromotionSchema.index({ code: 1 })
 PromotionSchema.index({ startsAt: 1, endsAt: 1 })
 
 const Promotion: Model<IPromotion> =

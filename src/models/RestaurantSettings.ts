@@ -27,6 +27,7 @@ export interface IRestaurantSettings extends Document {
   address: string
   phone: string
   email: string
+  logoUrl: string
   openingHoursText: string
   pickupEnabled: boolean
   asapPickupEnabled: boolean
@@ -80,6 +81,7 @@ const RestaurantSettingsSchema = new Schema<IRestaurantSettings>(
     address: { type: String, default: 'Shop 5/672 Glenferrie Rd, Hawthorn VIC 3122, Australia' },
     phone: { type: String, default: '' },
     email: { type: String, default: '' },
+    logoUrl: { type: String, default: '' },
     openingHoursText: { type: String, default: 'Mon–Sun · 11:00 AM – 9:00 PM' },
     pickupEnabled: { type: Boolean, default: true },
     asapPickupEnabled: { type: Boolean, default: true },

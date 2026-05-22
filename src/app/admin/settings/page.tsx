@@ -11,6 +11,7 @@ interface SiteSettings {
   address: string
   phone: string
   email: string
+  logoUrl: string
   openingHoursText: string
   defaultPreparationMinutes: number
 }
@@ -20,6 +21,7 @@ const defaults: SiteSettings = {
   address: 'Shop 5/672 Glenferrie Rd, Hawthorn VIC 3122, Australia',
   phone: '',
   email: '',
+  logoUrl: '',
   openingHoursText: 'Mon–Sun · 11:00 AM – 9:00 PM',
   defaultPreparationMinutes: 25,
 }
@@ -39,6 +41,7 @@ export default function AdminSettingsPage() {
             address: data.settings.address ?? defaults.address,
             phone: data.settings.phone ?? '',
             email: data.settings.email ?? '',
+            logoUrl: data.settings.logoUrl ?? '',
             openingHoursText: data.settings.openingHoursText ?? defaults.openingHoursText,
             defaultPreparationMinutes: data.settings.defaultPreparationMinutes ?? 25,
           })
@@ -139,6 +142,28 @@ export default function AdminSettingsPage() {
                 className="mt-1"
               />
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="logoUrl">Logo URL (for emails)</Label>
+            <Input
+              id="logoUrl"
+              type="url"
+              value={form.logoUrl}
+              onChange={e => set('logoUrl', e.target.value)}
+              placeholder="https://your-domain.com/logo.png"
+              className="mt-1"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Must be a public <code className="bg-gray-100 px-1 rounded">https://</code> URL — Gmail blocks relative paths in emails.
+              Upload your logo to Cloudinary, Vercel Blob, or any CDN and paste the URL here.
+            </p>
+            {form.logoUrl && (
+              <div className="mt-2 p-3 bg-gray-50 rounded-lg inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={form.logoUrl} alt="Logo preview" className="max-h-12 max-w-xs object-contain" />
+              </div>
+            )}
           </div>
 
           <div>

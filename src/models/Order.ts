@@ -10,6 +10,12 @@ export interface IOrderItem {
   specialInstructions?: string
 }
 
+export interface IStatusEmailLogEntry {
+  status: string
+  sentAt: Date
+  recipient: string
+}
+
 export interface IOrder extends Document {
   orderNumber: string
   customerName: string
@@ -38,6 +44,14 @@ export interface IOrder extends Document {
     | 'cancelled'
   paymentIntentId?: string
   paymentStatus?: 'unpaid' | 'paid' | 'failed'
+  // Email idempotency flags
+  merchantNotificationEmailSent: boolean
+  merchantNotificationEmailSentAt?: Date
+  confirmationEmailSent: boolean
+  confirmationEmailSentAt?: Date
+  confirmationEmailStatus: 'sent' | 'failed' | 'skipped'
+  confirmationEmailError?: string
+  statusEmailLog: IStatusEmailLogEntry[]
   createdAt: Date
   updatedAt: Date
 }
@@ -103,6 +117,30 @@ const OrderSchema = new Schema<IOrder>(
       type: String,
       enum: ['unpaid', 'paid', 'failed'],
       default: 'unpaid',
+    },
+    // Email idempotency flags
+    merchantNotificationEmailSent: { type: Boolean, default: false },
+    merchantNotificationEmailSentAt: { type: Date },
+    confirmationEmailSent: { type: Boolean, default: false },
+    confirmationEmailSentAt: { type: Date },
+    confirmationEmailStatus: {
+      type: String,
+      enum: ['sent', 'failed', 'skipped'],
+      default: 'skipped',
+    },
+    confirmationEmailError: { type: String },
+    statusEmailLog: {
+      type: [
+        new Schema<IStatusEmailLogEntry>(
+          {
+            status: { type: String, required: true },
+            sentAt: { type: Date, required: true },
+            recipient: { type: String, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
     },
   },
   { timestamps: true }

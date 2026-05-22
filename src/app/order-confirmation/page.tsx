@@ -1,26 +1,110 @@
-'use client'
-import { useEffect, useState, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import Link from 'next/link'
-import { CheckCircle, MapPin, Clock, ShoppingBag, Zap, Loader2 } from 'lucide-react'
+import { CheckCircle, MapPin, Clock, ShoppingBag, Zap, AlertCircle } from 'lucide-react'
 import Header from '@/components/layout/Header'
 import Footer from '@/components/layout/Footer'
 import { Button } from '@/components/ui/button'
+import { connectDB } from '@/lib/db'
+import Order from '@/models/Order'
+import MenuItem from '@/models/MenuItem'
+import stripe from '@/lib/stripe'
+import { sendPaidOrderEmails } from '@/lib/email/send-order-emails'
 
-interface OrderData {
-  orderNumber: string
-  pickupType?: string
-  pickupWindowLabel?: string
-  estimatedPickupTime?: string | null
-  requestedPickupTime?: string | null
-  paymentStatus?: string
-  status?: string
+/**
+ * Server-side payment verification + order marking.
+ * Runs synchronously when Stripe redirects the customer to the success_url.
+ * Primary confirmation path — webhooks are a secondary backup.
+ */
+async function verifyAndMarkPaid(
+  sessionId: string,
+  orderNumber: string,
+  requestOrigin: string
+): Promise<boolean> {
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId)
+    if (session.payment_status !== 'paid') return false
+
+    await connectDB()
+    const order = await Order.findOne({ orderNumber })
+    if (!order) return false
+
+    // Already processed — still send emails if not yet sent
+    if (order.paymentStatus === 'paid') {
+      // Fire emails idempotently (flags guard against duplicates)
+      try {
+        await sendPaidOrderEmails(order, {
+          stripeSessionId: sessionId,
+          stripePaymentIntentId: session.payment_intent as string | undefined,
+          siteOrigin: requestOrigin,
+        })
+      } catch (mailErr) {
+        console.error('[order-confirmation] sendPaidOrderEmails error (already paid):', mailErr)
+      }
+      return true
+    }
+
+    // Patch paymentIntentId if missing
+    if (!order.paymentIntentId && session.payment_intent) {
+      order.paymentIntentId = session.payment_intent as string
+    }
+
+    order.paymentStatus = 'paid'
+    order.status = 'pending'
+    await order.save()
+
+    // Increment orderCount for each item
+    for (const item of order.items) {
+      await MenuItem.findByIdAndUpdate(item.menuItemId, {
+        $inc: { orderCount: item.quantity },
+      })
+    }
+
+    // Auto-update popular items
+    const POPULAR_THRESHOLD = 10
+    const allItems = await MenuItem.find({ popularOverride: 'auto' }).lean()
+    const maxOrderCount = Math.max(...allItems.map((i) => i.orderCount), 0)
+    for (const item of allItems) {
+      const shouldBePopular =
+        item.orderCount >= POPULAR_THRESHOLD || item.orderCount >= maxOrderCount
+      if (item.isPopular !== shouldBePopular) {
+        await MenuItem.findByIdAndUpdate(item._id, { isPopular: shouldBePopular })
+      }
+    }
+
+    // Send emails — fire-and-forget, never throws into this function
+    try {
+      await sendPaidOrderEmails(order, {
+        stripeSessionId: sessionId,
+        stripePaymentIntentId: session.payment_intent as string | undefined,
+        siteOrigin: requestOrigin,
+      })
+    } catch (mailErr) {
+      console.error('[order-confirmation] sendPaidOrderEmails error:', mailErr)
+    }
+
+    return true
+  } catch (err) {
+    console.error('[order-confirmation] verifyAndMarkPaid error:', err)
+    return false
+  }
 }
 
-function formatPickupDisplay(order: OrderData): { icon: React.ReactNode; title: string; detail: string } {
+async function getOrder(orderNumber: string) {
+  try {
+    await connectDB()
+    return await Order.findOne({ orderNumber }).lean()
+  } catch {
+    return null
+  }
+}
+
+function formatPickupDisplay(order: {
+  pickupType?: string
+  estimatedPickupTime?: Date | string | null
+  requestedPickupTime?: Date | string | null
+}): { icon: React.ReactNode; title: string; detail: string } {
   if (order.pickupType === 'scheduled' && order.requestedPickupTime) {
-    const t = new Date(order.requestedPickupTime)
-    const label = t.toLocaleString('en-AU', {
+    const label = new Date(order.requestedPickupTime).toLocaleString('en-AU', {
       timeZone: 'Australia/Melbourne',
       weekday: 'short', month: 'short', day: 'numeric',
       hour: 'numeric', minute: '2-digit', hour12: true,
@@ -43,74 +127,48 @@ function formatPickupDisplay(order: OrderData): { icon: React.ReactNode; title: 
   }
 }
 
-function OrderConfirmationInner() {
-  const searchParams = useSearchParams()
-  const orderNumber = searchParams.get('order') ?? 'Unknown'
-  const sessionId = searchParams.get('session_id')
+async function OrderConfirmationInner({
+  searchParams,
+}: {
+  searchParams: Promise<{ order?: string; session_id?: string }>
+}) {
+  const params = await searchParams
+  const orderNumber = params.order ?? 'Unknown'
+  const sessionId = params.session_id
 
-  const [order, setOrder] = useState<OrderData | null>(null)
-  const [verifying, setVerifying] = useState(true)
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false)
+  const siteOrigin =
+    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXTAUTH_URL ?? ''
 
-  useEffect(() => {
-    if (orderNumber === 'Unknown') {
-      setVerifying(false)
-      return
-    }
+  // Verify payment server-side before rendering
+  let paymentConfirmed = false
+  if (sessionId && orderNumber !== 'Unknown') {
+    paymentConfirmed = await verifyAndMarkPaid(sessionId, orderNumber, siteOrigin)
+  }
 
-    async function verifyAndLoad() {
-      try {
-        // Step 1: verify payment with Stripe if we have a session_id
-        if (sessionId) {
-          const verifyRes = await fetch('/api/payment/verify-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId, orderNumber }),
-          })
-          const verifyData = await verifyRes.json()
-          if (verifyData.paid) {
-            setPaymentConfirmed(true)
-          }
-        }
+  // Fetch order for display
+  const order = orderNumber !== 'Unknown' ? await getOrder(orderNumber) : null
 
-        // Step 2: fetch the order from our DB to display details
-        const orderRes = await fetch(`/api/orders/${orderNumber}`)
-        if (orderRes.ok) {
-          const data = await orderRes.json()
-          setOrder(data.order ?? null)
-          if (data.order?.paymentStatus === 'paid') {
-            setPaymentConfirmed(true)
-          }
-        }
-      } catch (err) {
-        console.error('Order confirmation error:', err)
-      } finally {
-        setVerifying(false)
-      }
-    }
-
-    verifyAndLoad()
-  }, [orderNumber, sessionId])
+  // Webhook may have already marked it paid before we got here
+  if (order?.paymentStatus === 'paid') paymentConfirmed = true
 
   const pickup = order ? formatPickupDisplay(order) : null
 
-  if (verifying) {
-    return (
-      <div className="max-w-lg mx-auto px-4 py-20 text-center">
-        <Loader2 className="w-10 h-10 animate-spin text-burgundy mx-auto mb-4" />
-        <p className="text-gray-500">Confirming your payment...</p>
-      </div>
-    )
-  }
-
   return (
     <div className="max-w-lg mx-auto px-4 py-20 text-center">
-      <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-        <CheckCircle className="w-12 h-12 text-green-500" />
+      <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${paymentConfirmed ? 'bg-green-100' : 'bg-yellow-100'}`}>
+        {paymentConfirmed
+          ? <CheckCircle className="w-12 h-12 text-green-500" />
+          : <AlertCircle className="w-12 h-12 text-yellow-500" />
+        }
       </div>
-      <h1 className="text-3xl font-bold text-charcoal mb-2">Order Placed!</h1>
+
+      <h1 className="text-3xl font-bold text-charcoal mb-2">
+        {paymentConfirmed ? 'Order Confirmed!' : 'Order Received'}
+      </h1>
       <p className="text-gray-500 mb-6">
-        Thank you for your order. We&apos;ll have it ready for pickup soon.
+        {paymentConfirmed
+          ? "Your payment was successful. We'll have your order ready for pickup soon."
+          : "We've received your order. Payment confirmation may take a moment."}
       </p>
 
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-cream-dark mb-6 text-left space-y-3">
@@ -119,7 +177,6 @@ function OrderConfirmationInner() {
           <code className="font-mono font-bold text-burgundy text-lg">{orderNumber}</code>
         </div>
 
-        {/* Pickup info */}
         {pickup && (
           <div className="bg-cream rounded-xl px-4 py-3">
             <div className="flex items-center gap-2 font-semibold text-charcoal text-sm mb-1">
@@ -139,6 +196,7 @@ function OrderConfirmationInner() {
             </strong>
           </span>
         </div>
+
         <div className="flex items-start gap-2 text-sm text-gray-600">
           <MapPin className="w-4 h-4 text-orange mt-0.5" />
           <span>Pickup at: Shop 5/672 Glenferrie Rd, Hawthorn VIC 3122</span>
@@ -166,18 +224,22 @@ function OrderConfirmationInner() {
   )
 }
 
-export default function OrderConfirmationPage() {
+export default function OrderConfirmationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ order?: string; session_id?: string }>
+}) {
   return (
     <>
       <Header />
       <main className="min-h-screen bg-cream pt-20">
         <Suspense fallback={
           <div className="max-w-lg mx-auto px-4 py-20 text-center">
-            <Loader2 className="w-10 h-10 animate-spin text-burgundy mx-auto mb-4" />
+            <div className="w-10 h-10 border-4 border-burgundy border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-gray-500">Confirming your payment...</p>
           </div>
         }>
-          <OrderConfirmationInner />
+          <OrderConfirmationInner searchParams={searchParams} />
         </Suspense>
       </main>
       <Footer />

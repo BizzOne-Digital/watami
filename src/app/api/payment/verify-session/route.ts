@@ -3,18 +3,16 @@ import stripe from '@/lib/stripe'
 import { connectDB } from '@/lib/db'
 import Order from '@/models/Order'
 import MenuItem from '@/models/MenuItem'
-import { sendMerchantOrderEmail, sendCustomerConfirmationEmail } from '@/lib/mailgun'
+import { sendPaidOrderEmails } from '@/lib/email/send-order-emails'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * POST /api/payment/verify-session
  *
- * Called from the order-confirmation page as a reliable fallback to webhooks.
- * Retrieves the Stripe Checkout Session by ID, confirms payment_status === 'paid',
- * then marks the order paid in the DB (idempotent — safe to call multiple times).
- *
- * Body: { sessionId: string, orderNumber: string }
+ * Secondary fallback — called when the server-side order-confirmation page
+ * cannot run (e.g. static export, edge runtime). Verifies payment with Stripe
+ * and marks the order paid. Idempotent.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -24,11 +22,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing sessionId or orderNumber' }, { status: 400 })
     }
 
-    // Retrieve session directly from Stripe — source of truth
     const session = await stripe.checkout.sessions.retrieve(sessionId)
 
     if (session.payment_status !== 'paid') {
-      // Not paid yet — return current status without modifying DB
       return NextResponse.json({ paid: false, paymentStatus: session.payment_status })
     }
 
@@ -39,12 +35,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Idempotency guard — already paid, nothing to do
+    // Already paid — attempt emails idempotently and return
     if (order.paymentStatus === 'paid') {
+      try {
+        await sendPaidOrderEmails(order, {
+          stripeSessionId: sessionId,
+          stripePaymentIntentId: session.payment_intent as string | undefined,
+        })
+      } catch (mailErr) {
+        console.error('[verify-session] sendPaidOrderEmails error (already paid):', mailErr)
+      }
       return NextResponse.json({ paid: true, alreadyProcessed: true })
     }
 
-    // Patch paymentIntentId if it was null at order creation time
     if (!order.paymentIntentId && session.payment_intent) {
       order.paymentIntentId = session.payment_intent as string
     }
@@ -53,14 +56,12 @@ export async function POST(req: NextRequest) {
     order.status = 'pending'
     await order.save()
 
-    // Increment orderCount for each item
     for (const item of order.items) {
       await MenuItem.findByIdAndUpdate(item.menuItemId, {
         $inc: { orderCount: item.quantity },
       })
     }
 
-    // Auto-update popular items (threshold: 10 orders)
     const POPULAR_THRESHOLD = 10
     const allItems = await MenuItem.find({ popularOverride: 'auto' }).lean()
     const maxOrderCount = Math.max(...allItems.map((i) => i.orderCount), 0)
@@ -72,11 +73,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Send confirmation emails — fire-and-forget
-    await Promise.allSettled([
-      sendMerchantOrderEmail(order),
-      sendCustomerConfirmationEmail(order),
-    ])
+    try {
+      await sendPaidOrderEmails(order, {
+        stripeSessionId: sessionId,
+        stripePaymentIntentId: session.payment_intent as string | undefined,
+      })
+    } catch (mailErr) {
+      console.error('[verify-session] sendPaidOrderEmails error:', mailErr)
+    }
 
     return NextResponse.json({ paid: true })
   } catch (error) {

@@ -42,23 +42,32 @@ function getMelbourneDateStr(date: Date): string {
 
 /** Build a Date from a Melbourne date string + HH:MM time */
 function buildMelbourneDate(dateStr: string, timeStr: string): Date {
-  // Create as if it's UTC, then adjust for Melbourne offset
-  const naive = new Date(`${dateStr}T${timeStr}:00`)
-  // Use Intl to find the UTC offset for Melbourne at that moment
-  const utcStr = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'UTC',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  }).format(naive)
-  const melbStr = new Intl.DateTimeFormat('en-CA', {
+  // Strategy: find what UTC time corresponds to dateStr+timeStr in Melbourne.
+  // We binary-search by checking what Melbourne wall-clock a candidate UTC gives.
+  // Simpler approach: use the offset from a reference point.
+  //
+  // Build a candidate as if the string were UTC, then measure the Melbourne offset
+  // at that moment and subtract it.
+  const candidateUtc = new Date(`${dateStr}T${timeStr}:00Z`)
+
+  // Get Melbourne wall-clock for this candidate
+  const melbParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: TZ,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false,
-  }).format(naive)
-  const diff = naive.getTime() - new Date(melbStr).getTime()
-  return new Date(new Date(`${dateStr}T${timeStr}:00`).getTime() + diff)
+  }).formatToParts(candidateUtc)
+
+  const get = (type: string) => melbParts.find(p => p.type === type)?.value ?? '00'
+  const melbWall = new Date(
+    `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`
+  )
+
+  // offset = melbWall - candidateUtc  (positive = Melbourne ahead of UTC)
+  const offsetMs = melbWall.getTime() - candidateUtc.getTime()
+
+  // Actual UTC = candidateUtc - offsetMs
+  return new Date(candidateUtc.getTime() - offsetMs)
 }
 
 /** Format a slot label like "Today 11:30 AM" or "Tomorrow 2:00 PM" */

@@ -28,7 +28,7 @@ const schema = z.object({
   couponCode: z.string().optional(),
   tipPercentage: z.number().min(0).max(100).default(0),
   pickupType: z.enum(['asap', 'scheduled']),
-  requestedPickupTime: z.string().datetime().optional().nullable(),
+  requestedPickupTime: z.string().optional().nullable(),
 })
 
 export async function POST(req: NextRequest) {

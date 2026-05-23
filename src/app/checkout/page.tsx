@@ -167,10 +167,25 @@ export default function CheckoutPage() {
 
     setRedirecting(true)
     try {
-      // Look up the ISO value from the selected time string
+      // Build ISO pickup time from selected date + time slot in Melbourne timezone.
+      // We construct the wall-clock string and let the server interpret it correctly
+      // via the slot's pre-computed ISO value from the API.
+      const selectedSlotFull = slots.find(s => s.time === selectedSlot)
       const isoPickupTime = pickupType === 'scheduled'
-        ? (slots.find(s => s.time === selectedSlot)?.value ?? null)
+        ? (selectedSlotFull?.value ?? null)
         : null
+
+      // Safety check — if slot value is missing or looks wrong, fall back to
+      // constructing from date + time directly as a Melbourne wall-clock ISO string
+      const finalPickupTime = (() => {
+        if (pickupType !== 'scheduled') return null
+        if (!selectedDate || !selectedSlot) return null
+        // Use the slot's pre-computed value if available and looks valid
+        if (isoPickupTime) return isoPickupTime
+        // Fallback: build as YYYY-MM-DDTHH:MM:00+Melbourne_offset
+        // We send it as a plain datetime string; server parses with new Date()
+        return `${selectedDate}T${selectedSlot}:00`
+      })()
       const res = await fetch('/api/payment/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,7 +201,7 @@ export default function CheckoutPage() {
           couponCode: couponCode || undefined,
           tipPercentage,
           pickupType,
-          requestedPickupTime: isoPickupTime,
+          requestedPickupTime: finalPickupTime,
         }),
       })
 

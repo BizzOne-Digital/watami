@@ -42,32 +42,37 @@ function getMelbourneDateStr(date: Date): string {
 
 /** Build a Date from a Melbourne date string + HH:MM time */
 function buildMelbourneDate(dateStr: string, timeStr: string): Date {
-  // Strategy: find what UTC time corresponds to dateStr+timeStr in Melbourne.
-  // We binary-search by checking what Melbourne wall-clock a candidate UTC gives.
-  // Simpler approach: use the offset from a reference point.
+  // Get Melbourne's UTC offset in minutes at this wall-clock moment.
+  // We do this by comparing what UTC time a "fake UTC" date gives
+  // when re-read in Melbourne timezone.
   //
-  // Build a candidate as if the string were UTC, then measure the Melbourne offset
-  // at that moment and subtract it.
-  const candidateUtc = new Date(`${dateStr}T${timeStr}:00Z`)
+  // Example: dateStr="2026-05-23", timeStr="18:00"
+  // We want the UTC Date that equals 18:00 Melbourne time.
+  //
+  // Step 1: treat the wall-clock as UTC to get a starting point
+  const fakeUtc = new Date(`${dateStr}T${timeStr}:00Z`)
 
-  // Get Melbourne wall-clock for this candidate
-  const melbParts = new Intl.DateTimeFormat('en-CA', {
+  // Step 2: read that instant back in Melbourne to find the offset
+  const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: TZ,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
     hour12: false,
-  }).formatToParts(candidateUtc)
+  })
+  const parts = formatter.formatToParts(fakeUtc)
+  const get = (t: string) => parseInt(parts.find(p => p.type === t)?.value ?? '0')
 
-  const get = (type: string) => melbParts.find(p => p.type === type)?.value ?? '00'
-  const melbWall = new Date(
-    `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`
-  )
+  // Melbourne wall-clock when fakeUtc is the UTC instant
+  const melbH = get('hour')
+  const melbM = get('minute')
+  const targetH = parseInt(timeStr.split(':')[0])
+  const targetM = parseInt(timeStr.split(':')[1])
 
-  // offset = melbWall - candidateUtc  (positive = Melbourne ahead of UTC)
-  const offsetMs = melbWall.getTime() - candidateUtc.getTime()
+  // Difference in minutes between what Melbourne shows vs what we want
+  const diffMinutes = (targetH * 60 + targetM) - (melbH * 60 + melbM)
 
-  // Actual UTC = candidateUtc - offsetMs
-  return new Date(candidateUtc.getTime() - offsetMs)
+  // Adjust fakeUtc by that difference to get the correct UTC instant
+  return new Date(fakeUtc.getTime() + diffMinutes * 60 * 1000)
 }
 
 /** Format a slot label like "Today 11:30 AM" or "Tomorrow 2:00 PM" */
@@ -242,9 +247,11 @@ export function calculateAsapPickupTime(
 
   if (!isOpen) return null
 
-  const melbEstimated = toMelbourne(estimated)
-  const estH = melbEstimated.getHours()
-  const estM = melbEstimated.getMinutes()
+  const melbEstimated = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false,
+  }).formatToParts(estimated)
+  const estH = parseInt(melbEstimated.find(p => p.type === 'hour')?.value ?? '0')
+  const estM = parseInt(melbEstimated.find(p => p.type === 'minute')?.value ?? '0')
   const { hours: closeH, minutes: closeM } = parseTime(closeTime)
   const { hours: openH, minutes: openM } = parseTime(openTime)
 
@@ -310,9 +317,14 @@ export function validateScheduledPickup(
 
   if (!isOpen) return 'Restaurant is closed on the selected date.'
 
-  const melb = toMelbourne(requestedTime)
-  const reqH = melb.getHours()
-  const reqM = melb.getMinutes()
+  // Read the requested time in Melbourne wall-clock using Intl (works on any server timezone)
+  const melbFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+  const melbTimeParts = melbFormatter.formatToParts(requestedTime)
+  const reqH = parseInt(melbTimeParts.find(p => p.type === 'hour')?.value ?? '0')
+  const reqM = parseInt(melbTimeParts.find(p => p.type === 'minute')?.value ?? '0')
   const { hours: openH, minutes: openM } = parseTime(openTime)
   const { hours: closeH, minutes: closeM } = parseTime(closeTime)
 

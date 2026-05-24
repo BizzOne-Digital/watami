@@ -123,10 +123,26 @@ export default function AdminOrdersPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const knownPaidIdsRef = useRef<Set<string>>(new Set())
   const isFirstLoadRef = useRef(true)
+  const audioUnlockedRef = useRef(false)
 
   useEffect(() => {
     audioRef.current = new Audio('/order-notification.mp3')
     audioRef.current.volume = 1.0
+
+    // Unlock audio on first user interaction (browser autoplay policy)
+    const unlock = () => {
+      if (audioUnlockedRef.current) return
+      const a = audioRef.current
+      if (!a) return
+      a.play().then(() => {
+        a.pause()
+        a.currentTime = 0
+        audioUnlockedRef.current = true
+      }).catch(() => {})
+    }
+
+    document.addEventListener('click', unlock, { once: true })
+    return () => document.removeEventListener('click', unlock)
   }, [])
 
   const fetchOrders = useCallback(async () => {

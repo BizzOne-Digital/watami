@@ -129,20 +129,28 @@ export default function AdminOrdersPage() {
     audioRef.current = new Audio('/order-notification.mp3')
     audioRef.current.volume = 1.0
 
-    // Unlock audio on first user interaction (browser autoplay policy)
+    // Unlock audio context on any user interaction (browser autoplay policy)
+    // Keep listening — don't use { once: true } so retries work
     const unlock = () => {
-      if (audioUnlockedRef.current) return
       const a = audioRef.current
-      if (!a) return
+      if (!a || audioUnlockedRef.current) return
       a.play().then(() => {
         a.pause()
         a.currentTime = 0
         audioUnlockedRef.current = true
-      }).catch(() => {})
+        document.removeEventListener('click', unlock)
+        document.removeEventListener('keydown', unlock)
+      }).catch(() => {
+        // Will retry on next interaction
+      })
     }
 
-    document.addEventListener('click', unlock, { once: true })
-    return () => document.removeEventListener('click', unlock)
+    document.addEventListener('click', unlock)
+    document.addEventListener('keydown', unlock)
+    return () => {
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('keydown', unlock)
+    }
   }, [])
 
   const fetchOrders = useCallback(async () => {
@@ -172,10 +180,10 @@ export default function AdminOrdersPage() {
         const brandNew = newPaidIds.filter(id => !knownPaidIdsRef.current.has(id))
         if (brandNew.length > 0) {
           brandNew.forEach(id => knownPaidIdsRef.current.add(id))
-          try {
-            await audioRef.current?.play()
-          } catch {
-            // Browser may block autoplay — silently ignore
+          const a = audioRef.current
+          if (a) {
+            a.currentTime = 0
+            a.play().catch(() => {})
           }
           toast.success(`🍱 ${brandNew.length} new paid order${brandNew.length > 1 ? 's' : ''} received!`)
         }

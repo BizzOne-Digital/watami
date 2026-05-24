@@ -120,37 +120,47 @@ export default function AdminOrdersPage() {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
 
   // Sound notification for new paid orders
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const audioBufferRef = useRef<AudioBuffer | null>(null)
   const knownPaidIdsRef = useRef<Set<string>>(new Set())
   const isFirstLoadRef = useRef(true)
-  const audioUnlockedRef = useRef(false)
+  const soundEnabledRef = useRef(false)
 
+  // Load audio buffer once
   useEffect(() => {
-    audioRef.current = new Audio('/order-notification.mp3')
-    audioRef.current.volume = 1.0
-
-    // Unlock audio context on any user interaction (browser autoplay policy)
-    // Keep listening — don't use { once: true } so retries work
-    const unlock = () => {
-      const a = audioRef.current
-      if (!a || audioUnlockedRef.current) return
-      a.play().then(() => {
-        a.pause()
-        a.currentTime = 0
-        audioUnlockedRef.current = true
-        document.removeEventListener('click', unlock)
-        document.removeEventListener('keydown', unlock)
-      }).catch(() => {
-        // Will retry on next interaction
+    fetch('/order-notification.mp3')
+      .then(r => r.arrayBuffer())
+      .then(buf => {
+        const ctx = new AudioContext()
+        audioCtxRef.current = ctx
+        return ctx.decodeAudioData(buf)
       })
-    }
+      .then(decoded => {
+        audioBufferRef.current = decoded
+      })
+      .catch(() => {})
+  }, [])
 
-    document.addEventListener('click', unlock)
-    document.addEventListener('keydown', unlock)
-    return () => {
-      document.removeEventListener('click', unlock)
-      document.removeEventListener('keydown', unlock)
-    }
+  const playSound = useCallback(async () => {
+    const ctx = audioCtxRef.current
+    const buf = audioBufferRef.current
+    if (!ctx || !buf) return
+    // Resume context if suspended (browser autoplay policy)
+    if (ctx.state === 'suspended') await ctx.resume()
+    const src = ctx.createBufferSource()
+    src.buffer = buf
+    src.connect(ctx.destination)
+    src.start(0)
+  }, [])
+
+  const [soundEnabled, setSoundEnabled] = useState(false)
+
+  const enableSound = useCallback(async () => {
+    const ctx = audioCtxRef.current
+    if (!ctx) return
+    await ctx.resume()
+    soundEnabledRef.current = true
+    setSoundEnabled(true)
   }, [])
 
   const fetchOrders = useCallback(async () => {
@@ -180,11 +190,7 @@ export default function AdminOrdersPage() {
         const brandNew = newPaidIds.filter(id => !knownPaidIdsRef.current.has(id))
         if (brandNew.length > 0) {
           brandNew.forEach(id => knownPaidIdsRef.current.add(id))
-          const a = audioRef.current
-          if (a) {
-            a.currentTime = 0
-            a.play().catch(() => {})
-          }
+          if (soundEnabledRef.current) playSound().catch(() => {})
           toast.success(`🍱 ${brandNew.length} new paid order${brandNew.length > 1 ? 's' : ''} received!`)
         }
       }
@@ -229,9 +235,22 @@ export default function AdminOrdersPage() {
           <h1 className="text-2xl font-bold text-charcoal">Orders</h1>
           <p className="text-gray-500 text-sm">{total} total orders</p>
         </div>
-        <Button onClick={fetchOrders} variant="outline" size="sm">
-          <RefreshCw className="w-4 h-4 mr-2" />Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={enableSound}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+              soundEnabled
+                ? 'bg-green-50 border-green-300 text-green-700'
+                : 'bg-yellow-50 border-yellow-300 text-yellow-700 animate-pulse'
+            }`}
+          >
+            {soundEnabled ? '🔔 Sound On' : '🔕 Enable Sound'}
+          </button>
+          <Button onClick={fetchOrders} variant="outline" size="sm">
+            <RefreshCw className="w-4 h-4 mr-2" />Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

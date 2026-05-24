@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, Fragment, useRef } from 'react'
 import { toast } from 'sonner'
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Zap, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -119,6 +119,16 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null)
 
+  // Sound notification for new paid orders
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const knownPaidIdsRef = useRef<Set<string>>(new Set())
+  const isFirstLoadRef = useRef(true)
+
+  useEffect(() => {
+    audioRef.current = new Audio('/order-notification.mp3')
+    audioRef.current.volume = 1.0
+  }, [])
+
   const fetchOrders = useCallback(async () => {
     setLoading(true)
     try {
@@ -129,8 +139,31 @@ export default function AdminOrdersPage() {
       if (pickupFilter !== 'all') params.set('pickupType', pickupFilter)
       const res = await fetch(`/api/admin/orders?${params}`)
       const data = await res.json()
-      setOrders(data.orders ?? [])
+      const fetched: Order[] = data.orders ?? []
+      setOrders(fetched)
       setTotal(data.total ?? 0)
+
+      // Check for new paid orders and play sound
+      const newPaidIds = fetched
+        .filter(o => o.paymentStatus === 'paid')
+        .map(o => o._id)
+
+      if (isFirstLoadRef.current) {
+        // Seed known IDs on first load — don't beep for existing orders
+        newPaidIds.forEach(id => knownPaidIdsRef.current.add(id))
+        isFirstLoadRef.current = false
+      } else {
+        const brandNew = newPaidIds.filter(id => !knownPaidIdsRef.current.has(id))
+        if (brandNew.length > 0) {
+          brandNew.forEach(id => knownPaidIdsRef.current.add(id))
+          try {
+            await audioRef.current?.play()
+          } catch {
+            // Browser may block autoplay — silently ignore
+          }
+          toast.success(`🍱 ${brandNew.length} new paid order${brandNew.length > 1 ? 's' : ''} received!`)
+        }
+      }
     } catch {
       toast.error('Failed to load orders')
     } finally {
@@ -139,6 +172,14 @@ export default function AdminOrdersPage() {
   }, [page, search, statusFilter, paymentFilter, pickupFilter])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
+
+  // Poll every 30 seconds for new paid orders
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchOrders()
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [fetchOrders])
 
   const updateStatus = async (id: string, status: string) => {
     try {
